@@ -1,0 +1,24 @@
+:root { --ink: #2A1E6E; --soft: #6B5FA8; --bg1: #6D4BE0; --bg2: #3B23A8; --gold: #FFD23F; --red: #E0294F; --green: #4CC63A; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; font-family: "Nunito", system-ui, sans-serif; color: var(--ink);
+  background: radial-gradient(120% 80% at 50% 0%, var(--bg1), var(--bg2)); display: flex; justify-content: center; padding: 24px 16px; }
+main { width: 100%; max-width: 440px; }
+h1 { font-family: "Lilita One", system-ui, sans-serif; font-weight: 400; color: #fff; text-align: center; font-size: 40px; margin: 8px 0 4px;
+  text-shadow: 0 3px 0 var(--ink), 0 0 2px var(--ink); letter-spacing: 1px; }
+.sub { text-align: center; color: #EDE6FF; font-weight: 800; margin: 0 0 18px; }
+.card { background: #FFFDF6; border: 3px solid var(--ink); border-radius: 22px; box-shadow: 0 5px 0 var(--ink); padding: 18px; margin-bottom: 16px; }
+.hero { display: flex; justify-content: center; margin-bottom: 6px; }
+.hero img { width: 120px; height: 120px; filter: drop-shadow(0 6px 6px rgba(20,10,60,.4)); }
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 14px 16px; margin-top: 10px; border-radius: 16px;
+  border: 3px solid var(--ink); box-shadow: 0 4px 0 var(--ink); font-family: "Lilita One", system-ui, sans-serif; font-size: 20px; color: #fff;
+  text-decoration: none; cursor: pointer; text-shadow: 0 2px 0 rgba(0,0,0,.25); }
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+.green { background: linear-gradient(180deg, #8EEA5C, var(--green)); }
+.red { background: linear-gradient(180deg, #FF7A8A, var(--red)); }
+.light { background: #fff; color: var(--ink); text-shadow: none; font-size: 17px; }
+.code { font-family: ui-monospace, monospace; font-size: 13px; word-break: break-all; background: #F1ECFF; border-radius: 10px; padding: 8px 10px; margin-top: 10px; color: var(--soft); }
+.big { font-size: 22px; font-weight: 900; text-align: center; margin: 4px 0; }
+.muted { color: var(--soft); font-weight: 700; font-size: 14px; line-height: 1.5; text-align: center; }
+ul { padding-left: 20px; line-height: 1.6; font-weight: 700; }
+footer { text-align: center; font-size: 13px; color: #DCD2FF; font-weight: 700; }
+footer a { color: #fff; }
