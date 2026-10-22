@@ -36,7 +36,7 @@ export function weekEnd(ts) { // Zeitpunkt, an dem die Woche von ts endet
 const cleanLook = (l) => {
   if (!l || typeof l !== "object") return "{}";
   const o = {};
-  for (const k of ["char", "hat", "glasses", "outfit", "pin", "color"]) { const n = int(l[k], 0, 99); if (n != null) o[k] = n; }
+  for (const k of ["char", "hat", "glasses", "outfit", "pin", "color", "hair", "hcol", "beard", "tone"]) { const n = int(l[k], 0, 99); if (n != null) o[k] = n; }
   for (const k of ["frame", "skin", "nfx", "dance"]) if (typeof l[k] === "string" && /^[a-z0-9-]{1,24}$/.test(l[k])) o[k] = l[k];
   return JSON.stringify(o);
 };
