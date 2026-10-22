@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS players (
   level INTEGER NOT NULL DEFAULT 1,     -- Spieler-Stufe (für die Profilkarte)
   best_word TEXT NOT NULL DEFAULT '',   -- bestes Wort
   best_score INTEGER NOT NULL DEFAULT 0,
-  stats TEXT NOT NULL DEFAULT '{}'      -- Profil: Erfolge, Duelle, Rekorde, Vitrine (3 Lieblings-Erfolge)
+  stats TEXT NOT NULL DEFAULT '{}',     -- Profil: Erfolge, Duelle, Rekorde, Vitrine (3 Lieblings-Erfolge)
+  rating INTEGER NOT NULL DEFAULT 1000, -- Duell-Wertung (Elo)
+  duels INTEGER NOT NULL DEFAULT 0, duel_wins INTEGER NOT NULL DEFAULT 0
 );
 
 -- Tages-Challenge: nur der erste Versuch des Tages zählt
@@ -50,5 +52,19 @@ CREATE TABLE IF NOT EXISTS league_results (
 CREATE TABLE IF NOT EXISTS xp_days (player TEXT NOT NULL, day TEXT NOT NULL, xp INTEGER NOT NULL, PRIMARY KEY (player, day));
 
 CREATE TABLE IF NOT EXISTS reports (reporter TEXT NOT NULL, target TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (reporter, target));
+
+-- Online-Duelle gegen Fremde: gleiche Karten (seed), nacheinander gespielt wie bei Quizduell
+CREATE TABLE IF NOT EXISTS matches (
+  id TEXT PRIMARY KEY, seed INTEGER NOT NULL, len INTEGER NOT NULL, lang TEXT NOT NULL,
+  status TEXT NOT NULL,              -- playing_a (A spielt) → open (wartet auf B) → claimed (B spielt) → done
+  a TEXT NOT NULL, b TEXT, target TEXT, a_rating INTEGER NOT NULL DEFAULT 1000,
+  a_points INTEGER, a_secs INTEGER, a_rounds INTEGER, b_points INTEGER, b_secs INTEGER, b_rounds INTEGER,
+  a_delta INTEGER, b_delta INTEGER, a_seen INTEGER NOT NULL DEFAULT 0, b_seen INTEGER NOT NULL DEFAULT 0,
+  created INTEGER NOT NULL, claimed INTEGER, finished INTEGER
+);
+CREATE INDEX IF NOT EXISTS match_open ON matches (status, lang, len, created);
+CREATE INDEX IF NOT EXISTS match_a ON matches (a, created);
+CREATE INDEX IF NOT EXISTS match_b ON matches (b, created);
+CREATE INDEX IF NOT EXISTS match_t ON matches (target, status);
 
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);

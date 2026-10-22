@@ -104,6 +104,7 @@ export async function cleanup(env, now) {
     env.DB.prepare("DELETE FROM league_results WHERE week < ?").bind(wk),
     env.DB.prepare("DELETE FROM xp_days WHERE day < ?").bind(day),
     env.DB.prepare("DELETE FROM reports WHERE at < ?").bind(cut),
+    env.DB.prepare("DELETE FROM matches WHERE created < ?").bind(now - 60 * 86400000),
   ]);
 }
 
@@ -180,8 +181,81 @@ async function dailyBoard(env, day, lang, country, meId, fresh = false) {
     top: top.map((r, i) => ({ rank: i + 1, rounds: r.rounds, points: r.points, secs: r.secs, ...publicRow(r, meId) })) };
 }
 
+// ── Online-Duelle (wie Quizduell: gleiche Karten, nacheinander) ──
+// Ablauf: start → A spielt → submit (open) → B bekommt das Duell bei start (claimed) → B spielt → submit (done, Wertung für beide).
+// Herausforderung (Revanche): challenge {target} legt ein Duell an, das nur target annehmen kann.
+const CLAIM_TIMEOUT = 2 * 3600000;   // B spielt nicht zu Ende → nach 2 Stunden wieder frei für andere
+const duelWin = (ap, as, bp, bs) => (ap !== bp ? (ap > bp ? 1 : -1) : as !== bs ? (as < bs ? 1 : -1) : 0);
+const elo = (ra, rb, res) => { const ea = 1 / (1 + Math.pow(10, (rb - ra) / 400)); return Math.round(24 * ((res === 1 ? 1 : res === 0 ? 0.5 : 0) - ea)); };
+const matchView = (m, meId, opp) => {
+  const mine = m.a === meId ? "a" : "b", other = mine === "a" ? "b" : "a", done = m.status === "done";
+  return { id: m.id, seed: m.seed, len: m.len, status: m.status, role: mine, created: m.created, finished: m.finished || null,
+    me: m[mine + "_points"] == null ? null : { points: m[mine + "_points"], secs: m[mine + "_secs"], rounds: m[mine + "_rounds"] },
+    opp: opp ? { ...publicRow(opp, meId), level: opp.level, rating: opp.rating, ...(done ? { points: m[other + "_points"], secs: m[other + "_secs"], rounds: m[other + "_rounds"] } : {}) } : null,
+    delta: done ? m[mine + "_delta"] : null, seen: !!m[mine + "_seen"], challenge: !!m.target };
+};
+async function matchStart(env, p, len, now) {
+  // 1. offenes Duell eines anderen Spielers mit ähnlicher Wertung (gleiche Sprache und Länge), nicht gegen sich selbst
+  const cand = await env.DB.prepare(`SELECT * FROM matches WHERE lang = ? AND len = ? AND a != ? AND target IS NULL
+      AND (status = 'open' OR (status = 'claimed' AND claimed < ?)) ORDER BY ABS(a_rating - ?) ASC, created ASC LIMIT 5`)
+    .bind(p.lang, len, p.id, now - CLAIM_TIMEOUT, p.rating).all();
+  for (const m of cand.results) {
+    const r = await env.DB.prepare("UPDATE matches SET status = 'claimed', b = ?, claimed = ? WHERE id = ? AND (status = 'open' OR (status = 'claimed' AND claimed < ?))")
+      .bind(p.id, now, m.id, now - CLAIM_TIMEOUT).run();
+    if (r.meta && r.meta.changes > 0) {
+      const opp = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(m.a).first();
+      return { ...matchView({ ...m, status: "claimed", b: p.id }, p.id, opp), fresh: false };
+    }
+  }
+  // 2. sonst ein neues Duell anlegen – du spielst zuerst, ein anderer bekommt danach dieselben Karten
+  const id = randHex(10), seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  await env.DB.prepare("INSERT INTO matches (id, seed, len, lang, status, a, a_rating, created) VALUES (?, ?, ?, ?, 'playing_a', ?, ?, ?)")
+    .bind(id, seed, len, p.lang, p.id, p.rating, now).run();
+  return { id, seed, len, status: "playing_a", role: "a", me: null, opp: null, fresh: true };
+}
+async function matchSubmit(env, p, b, now) {
+  const m = await env.DB.prepare("SELECT * FROM matches WHERE id = ?").bind(String(b.mid || "")).first();
+  if (!m) return { error: "match" };
+  const points = int(b.points, 0, 50000000), secs = int(b.secs, 1, 86400), rounds = int(b.rounds, 0, 20);
+  if (points == null || secs == null || rounds == null || rounds > m.len) return { error: "score" };
+  if (m.a === p.id && m.status === "playing_a") {
+    await env.DB.prepare("UPDATE matches SET a_points = ?, a_secs = ?, a_rounds = ?, status = 'open' WHERE id = ? AND status = 'playing_a'").bind(points, secs, rounds, m.id).run();
+    const opp = m.target ? await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(m.target).first() : null;
+    return { match: matchView({ ...m, status: "open", a_points: points, a_secs: secs, a_rounds: rounds }, p.id, opp) };
+  }
+  if (m.b === p.id && m.status === "claimed") {
+    const a = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(m.a).first();
+    const res = duelWin(points, secs, m.a_points, m.a_secs); // aus Sicht von B
+    const db = a ? elo(p.rating, a.rating, res) : 0, da = a ? elo(a.rating, p.rating, -res) : 0;
+    const stmts = [
+      env.DB.prepare("UPDATE matches SET b_points = ?, b_secs = ?, b_rounds = ?, status = 'done', finished = ?, a_delta = ?, b_delta = ?, b_seen = 1 WHERE id = ? AND status = 'claimed'")
+        .bind(points, secs, rounds, now, da, db, m.id),
+      env.DB.prepare("UPDATE players SET rating = MAX(0, rating + ?), duels = duels + 1, duel_wins = duel_wins + ? WHERE id = ?").bind(db, res === 1 ? 1 : 0, p.id),
+    ];
+    if (a) stmts.push(env.DB.prepare("UPDATE players SET rating = MAX(0, rating + ?), duels = duels + 1, duel_wins = duel_wins + ? WHERE id = ?").bind(da, res === -1 ? 1 : 0, a.id));
+    await env.DB.batch(stmts);
+    const done = { ...m, status: "done", b_points: points, b_secs: secs, b_rounds: rounds, finished: now, a_delta: da, b_delta: db, b_seen: 1 };
+    return { match: matchView(done, p.id, a), rating: Math.max(0, p.rating + db) };
+  }
+  return { error: "state" };
+}
+async function matchList(env, p, now) {
+  const rows = (await env.DB.prepare(`SELECT * FROM matches WHERE (a = ? OR b = ? OR (target = ? AND status = 'open')) AND created > ?
+      AND NOT (a = ? AND status = 'playing_a' AND created < ?) ORDER BY COALESCE(finished, created) DESC LIMIT 30`)
+    .bind(p.id, p.id, p.id, now - 30 * 86400000, p.id, now - CLAIM_TIMEOUT).all()).results;
+  const ids = [...new Set(rows.flatMap((m) => [m.a, m.b, m.target]).filter((x) => x && x !== p.id))];
+  const players = new Map();
+  for (const id of ids) { const q = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(id).first(); if (q) players.set(id, q); }
+  return rows.map((m) => {
+    const oid = m.a === p.id ? (m.b || m.target) : m.a;
+    const v = matchView(m, p.id, players.get(oid) || null);
+    if (m.target === p.id && m.status === "open") v.role = "invite"; // Herausforderung an mich
+    return v;
+  });
+}
+
 // Datenbank auf den neuesten Stand bringen (neue Spalten), einmal je Version
-const SCHEMA = 3;
+const SCHEMA = 4;
 let migrated = false;
 async function migrate(env) {
   if (migrated) return;
@@ -190,7 +264,11 @@ async function migrate(env) {
     for (const sql of ["ALTER TABLE players ADD COLUMN trophies TEXT NOT NULL DEFAULT '{}'", "ALTER TABLE players ADD COLUMN best_tier INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE players ADD COLUMN weeks INTEGER NOT NULL DEFAULT 0", "ALTER TABLE players ADD COLUMN level INTEGER NOT NULL DEFAULT 1",
       "ALTER TABLE players ADD COLUMN best_word TEXT NOT NULL DEFAULT ''", "ALTER TABLE players ADD COLUMN best_score INTEGER NOT NULL DEFAULT 0",
-      "ALTER TABLE league_results ADD COLUMN crowns INTEGER NOT NULL DEFAULT 0", "ALTER TABLE players ADD COLUMN stats TEXT NOT NULL DEFAULT '{}'"]) {
+      "ALTER TABLE league_results ADD COLUMN crowns INTEGER NOT NULL DEFAULT 0", "ALTER TABLE players ADD COLUMN stats TEXT NOT NULL DEFAULT '{}'",
+      "ALTER TABLE players ADD COLUMN rating INTEGER NOT NULL DEFAULT 1000", "ALTER TABLE players ADD COLUMN duels INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE players ADD COLUMN duel_wins INTEGER NOT NULL DEFAULT 0", `CREATE TABLE IF NOT EXISTS matches (   id TEXT PRIMARY KEY, seed INTEGER NOT NULL, len INTEGER NOT NULL, lang TEXT NOT NULL,   status TEXT NOT NULL,              -- playing_a (A spielt) → open (wartet auf B) → claimed (B spielt) → done   a TEXT NOT NULL, b TEXT, target TEXT, a_rating INTEGER NOT NULL DEFAULT 1000,   a_points INTEGER, a_secs INTEGER, a_rounds INTEGER, b_points INTEGER, b_secs INTEGER, b_rounds INTEGER,   a_delta INTEGER, b_delta INTEGER, a_seen INTEGER NOT NULL DEFAULT 0, b_seen INTEGER NOT NULL DEFAULT 0,   created INTEGER NOT NULL, claimed INTEGER, finished INTEGER )`,
+      "CREATE INDEX IF NOT EXISTS match_open ON matches (status, lang, len, created)", "CREATE INDEX IF NOT EXISTS match_a ON matches (a, created)",
+      "CREATE INDEX IF NOT EXISTS match_b ON matches (b, created)", "CREATE INDEX IF NOT EXISTS match_t ON matches (target, status)"]) {
       try { await env.DB.prepare(sql).run(); } catch { /* Spalte gibt es schon */ }
     }
     await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', ?)").bind(String(SCHEMA)).run();
@@ -233,7 +311,7 @@ async function handle(req, env, now) {
     return json({ ok: true, name });
   }
   if (path === "/v1/delete") { // alle Daten dieses Spielers löschen (Datenschutz)
-    await env.DB.batch(["players WHERE id", "daily WHERE player", "league_members WHERE player", "league_results WHERE player", "xp_days WHERE player", "reports WHERE reporter"]
+    await env.DB.batch(["players WHERE id", "daily WHERE player", "league_members WHERE player", "league_results WHERE player", "xp_days WHERE player", "reports WHERE reporter", "matches WHERE a", "matches WHERE b"]
       .map((t) => env.DB.prepare(`DELETE FROM ${t} = ?`).bind(p.id)));
     boardCache.clear();
     return json({ ok: true });
@@ -262,11 +340,41 @@ async function handle(req, env, now) {
     const r = await env.DB.prepare("UPDATE league_results SET claimed = 1 WHERE player = ? AND week = ? AND claimed = 0").bind(p.id, String(b.week || "")).run();
     return json({ ok: true, claimed: (r.meta && r.meta.changes) > 0 });
   }
+  if (path === "/v1/match/start") {
+    const len = b.len === 3 ? 3 : 5;
+    const m = await matchStart(env, p, len, now);
+    return json({ ok: true, match: m, rating: p.rating });
+  }
+  if (path === "/v1/match/challenge") { // Revanche: neues Duell nur für diesen Spieler – du spielst zuerst
+    const t = await env.DB.prepare("SELECT id FROM players WHERE pub = ?").bind(String(b.target || "")).first();
+    if (!t || t.id === p.id) return fail("target");
+    const id = randHex(10), seed = crypto.getRandomValues(new Uint32Array(1))[0], len = b.len === 3 ? 3 : 5;
+    await env.DB.prepare("INSERT INTO matches (id, seed, len, lang, status, a, target, a_rating, created) VALUES (?, ?, ?, ?, 'playing_a', ?, ?, ?, ?)")
+      .bind(id, seed, len, p.lang, p.id, t.id, p.rating, now).run();
+    return json({ ok: true, match: { id, seed, len, status: "playing_a", role: "a", me: null, opp: null, challenge: true } });
+  }
+  if (path === "/v1/match/accept") { // Herausforderung annehmen
+    const m = await env.DB.prepare("SELECT * FROM matches WHERE id = ? AND target = ? AND status = 'open'").bind(String(b.mid || ""), p.id).first();
+    if (!m) return fail("match");
+    await env.DB.prepare("UPDATE matches SET status = 'claimed', b = ?, claimed = ? WHERE id = ? AND status = 'open'").bind(p.id, now, m.id).run();
+    const opp = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(m.a).first();
+    return json({ ok: true, match: matchView({ ...m, status: "claimed", b: p.id }, p.id, opp) });
+  }
+  if (path === "/v1/match/submit") {
+    const r = await matchSubmit(env, p, b, now);
+    return r.error ? fail(r.error) : json({ ok: true, ...r });
+  }
+  if (path === "/v1/match/list") return json({ ok: true, matches: await matchList(env, p, now), rating: p.rating, duels: p.duels, wins: p.duel_wins });
+  if (path === "/v1/match/seen") {
+    await env.DB.prepare("UPDATE matches SET a_seen = CASE WHEN a = ? THEN 1 ELSE a_seen END, b_seen = CASE WHEN b = ? THEN 1 ELSE b_seen END WHERE id = ?").bind(p.id, p.id, String(b.mid || "")).run();
+    return json({ ok: true });
+  }
   if (path === "/v1/player") { // Profilkarte eines anderen Spielers (öffentliche Angaben)
     const t = await env.DB.prepare("SELECT * FROM players WHERE pub = ?").bind(String(b.target || "")).first();
     if (!t) return fail("target", 404);
     return json({ ok: true, player: { ...publicRow(t, p.id), tier: t.tier, bestTier: t.best_tier, weeks: t.weeks, trophies: safeParse(t.trophies),
-      level: t.level, bestWord: t.hidden ? "" : t.best_word, bestScore: t.best_score, since: t.created, stats: safeParse(t.stats) } });
+      level: t.level, bestWord: t.hidden ? "" : t.best_word, bestScore: t.best_score, since: t.created, stats: safeParse(t.stats),
+      rating: t.rating, onlineDuels: t.duels, onlineWins: t.duel_wins } });
   }
   if (path === "/v1/report") {
     if (typeof b.target !== "string" || b.target === p.pub) return fail("target");
