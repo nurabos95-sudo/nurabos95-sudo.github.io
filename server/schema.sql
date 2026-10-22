@@ -12,7 +12,14 @@ CREATE TABLE IF NOT EXISTS players (
   look TEXT NOT NULL DEFAULT '{}', -- Figur (kleines JSON)
   tier INTEGER NOT NULL DEFAULT 0, -- Liga: 0 Bronze … 6 Diamant
   hidden INTEGER NOT NULL DEFAULT 0, -- nach Meldungen: Name ausgeblendet
-  created INTEGER NOT NULL
+  created INTEGER NOT NULL,
+  trophies TEXT NOT NULL DEFAULT '{}', -- Liga-Pokale: {"Stufe": [Gold, Silber, Bronze]}
+  best_tier INTEGER NOT NULL DEFAULT 0, -- höchste erreichte Liga
+  weeks INTEGER NOT NULL DEFAULT 0,     -- Liga-Wochen mit Platzierung
+  level INTEGER NOT NULL DEFAULT 1,     -- Spieler-Stufe (für die Profilkarte)
+  best_word TEXT NOT NULL DEFAULT '',   -- bestes Wort
+  best_score INTEGER NOT NULL DEFAULT 0,
+  stats TEXT NOT NULL DEFAULT '{}'      -- Profil: Erfolge, Duelle, Rekorde, Vitrine (3 Lieblings-Erfolge)
 );
 
 -- Tages-Challenge: nur der erste Versuch des Tages zählt
@@ -35,6 +42,7 @@ CREATE INDEX IF NOT EXISTS league_bucket ON league_members (week, lang, tier);
 CREATE TABLE IF NOT EXISTS league_results (
   week TEXT NOT NULL, player TEXT NOT NULL, tier INTEGER NOT NULL, grp TEXT NOT NULL,
   rank INTEGER NOT NULL, size INTEGER NOT NULL, new_tier INTEGER NOT NULL, claimed INTEGER NOT NULL DEFAULT 0,
+  crowns INTEGER NOT NULL DEFAULT 0, -- Kronen für Wenzels Schatzkammer
   PRIMARY KEY (week, player)
 );
 
