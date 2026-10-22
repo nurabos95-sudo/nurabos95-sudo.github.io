@@ -1,7 +1,13 @@
 # Wortpoker online (Cloudflare Worker). Die Datenbank-ID trägt der GitHub-Workflow beim Hochladen selbst ein.
 name = "wortpoker-online"
-main = "src/worker.js"
+main = "src/index.js"
 compatibility_date = "2026-06-01"
+
+# Wörterbücher als Binärdaten (Bloom-Filter in dict/*.bin)
+[[rules]]
+type = "Data"
+globs = ["**/*.bin"]
+fallthrough = true
 
 [[d1_databases]]
 binding = "DB"

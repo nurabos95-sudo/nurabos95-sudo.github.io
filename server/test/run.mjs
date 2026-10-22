@@ -2,11 +2,15 @@
 import { D1 } from "./d1shim.mjs";
 import { handle, weekOf, weekEnd, cleanup } from "../src/worker.js";
 import { cleanName } from "../src/names.js";
+import { setBlooms, inDict, verifyLog } from "../src/verify.js";
+import { scoreCore, LETTER_VALS } from "../src/score.js";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const env = { DB: new D1(join(here, "..", "schema.sql")) };
+const env = { DB: new D1(join(here, "..", "schema.sql")), VERIFY: "off" }; // Prüfung erst im Abschnitt „Ergebnis-Prüfung“
+setBlooms(Object.fromEntries(["de", "en", "es", "fr", "pt"].map((l) => [l, readFileSync(join(here, "..", "dict", l + ".bin"))])));
 const errors = [];
 const ok = (c, msg) => { console.log((c ? "  ✔ " : "  ✘ ") + msg); if (!c) errors.push(msg); };
 let NOW = Date.UTC(2026, 9, 21, 12); // Mittwoch, 21.10.2026 12:00 UTC
@@ -126,6 +130,69 @@ console.log("Online-Duelle");
   const card = await call("/v1/player", { id: y.id, token: y.token, target: x.pub });
   ok(card.player.rating === lx.rating + s3.match.delta && card.player.onlineDuels === 2 && card.player.onlineWins === 1, `Profilkarte: Wertung und Online-Duelle (${card.player.rating})`);
   ok((await call("/v1/match/submit", { id: y.id, token: y.token, mid: m1.id, points: 1, secs: 1, rounds: 1 })).error === "state", "Fremdes Duell → abgelehnt");
+}
+
+console.log("Ergebnis-Prüfung");
+{
+  const wf = join(here, "..", "..", "public", "words.txt"); // nur im App-Projekt vorhanden
+  if (existsSync(wf)) ok(readFileSync(wf, "utf8").split("\n").filter((w, i) => w && i % 97 === 0).every((w) => inDict("de", w)), "Alle Wörter des Wörterbuchs werden erkannt");
+  let fp = 0; for (let i = 0; i < 2000; i++) fp += inDict("de", "QX" + i.toString(36).toUpperCase() + "ZK") ? 1 : 0;
+  ok(fp < 40, `Falsch erkannt: ${fp} von 2000 erfundenen Wörtern`);
+  ok(inDict("fr", "ABAISSA") && !inDict("de", "ABAISSA") && inDict("en", "HOUSE"), "Je Sprache eigenes Wörterbuch");
+  // Protokoll bauen: [Runde, [Wörter], Boss-Regeln]
+  const mk = (plan, lang = "de") => {
+    const log = []; let rw = 0;
+    for (const [r, ws, b = []] of plan) ws.forEach((w, i) => {
+      const e = { r, w, c: w, j: [], e: {}, b, f: i === 0 ? 1 : 0, l: 0, d: 0, m: 5, ws: i, rw: rw++, sw: 0, cap: 0 };
+      e.p = scoreCore(w, [...w], [], {}, { isFirstPlay: !!e.f, isLastPlay: false, wordsSoFar: i, roundNum: r, moneyNow: 5, runWordsNow: e.rw, bossRules: b }, LETTER_VALS[lang]).total;
+      log.push(e);
+    });
+    return log;
+  };
+  const plan = [[1, ["GARTEN"]], [2, ["GARTEN"]], [3, ["GARTEN", "GARTEN"], ["eile"]], [4, ["HAUS"]]];
+  const good = mk(plan), pts = good.reduce((a, x) => a + x.p, 0);
+  ok(verifyLog(good, { lang: "de", rounds: 3, points: pts, secs: 60 }) === null, `Ehrliches Spiel: in Ordnung (${pts} Punkte)`);
+  const bad = (f, res = {}) => { const l = JSON.parse(JSON.stringify(good)); f(l); return verifyLog(l, { lang: "de", rounds: 3, points: l.reduce((a, x) => a + x.p, 0), secs: 60, ...res }); };
+  ok(verifyLog(null, { lang: "de", rounds: 3, points: pts, secs: 60 }) === "nolog", "Ohne Protokoll: auffällig");
+  ok(bad((l) => { l[0].w = l[0].c = "GXRTEN"; }) === "dict:GXRTEN", "Wort nicht im Wörterbuch");
+  ok(bad((l) => { l[1].p += 500; }).startsWith("score"), "Punkte geschönt");
+  ok(bad((l) => { l[0].j = ["wortgott", "echo", "spiegel"]; l[0].p = scoreCore("GARTEN", [..."GARTEN"], l[0].j, {}, { isFirstPlay: true, bossRules: [] }, LETTER_VALS.de).total; }) === null, "Joker mitgerechnet: in Ordnung");
+  ok(bad((l) => { l[0].j = ["a", "b", "c", "d", "e", "f"]; }) === "jokers", "Mehr als 5 Joker");
+  ok(bad((l) => { l[0].b = ["mauer"]; }) === "bossround", "Boss in Runde 1");
+  ok(bad((l) => { l[2].b = l[3].b = []; }) === "bossround", "Runde 3 ohne Boss");
+  ok(bad(() => {}, { rounds: 4 }) === "target", "Mehr Runden behauptet als geschafft");
+  ok(bad(() => {}, { points: pts + 1 }) === "sum", "Summe stimmt nicht");
+  ok(bad(() => {}, { secs: 3 }) === "fast", "Unmenschlich schnell");
+  ok(bad((l) => { l[0].c = "GAR★EN"; l[0].p = scoreCore("GARTEN", [..."GAR★EN"], [], {}, { isFirstPlay: true, bossRules: [] }, LETTER_VALS.de).total; }) === null && bad((l) => { l[0].c = "HAUSEN"; }) === "letters", "★ erlaubt, falsche Buchstaben nicht");
+  ok(bad((l) => { l[0].l = 1; l.splice(1, 0, { ...l[0], ws: 1, rw: 1, f: 0, l: 0 }); for (let i = 2; i < l.length; i++) l[i].rw = i; }) === "afterlast", "Nach dem letzten Zug kein Wort mehr");
+  ok(verifyLog(mk([[1, ["MAISON"]], [2, ["MAISON"]]], "fr"), { lang: "fr", rounds: 2, points: mk([[1, ["MAISON"]], [2, ["MAISON"]]], "fr").reduce((a, x) => a + x.p, 0), secs: 30 }) === null, "Französisch mit eigenen Buchstabenwerten");
+
+  env.VERIFY = undefined;
+  const day2 = new Date(NOW).toISOString().slice(0, 10), [h, s] = [await reg("Ehrlich"), await reg("Schummler")];
+  await call("/v1/daily", { id: h.id, token: h.token, day: day2, lang: "de", rounds: 3, points: pts, secs: 60, log: good });
+  r = await call("/v1/daily", { id: s.id, token: s.token, day: day2, lang: "de", rounds: 30, points: 9999999, secs: 5 });
+  ok(r.me.rank === 1 && r.top[0].me === true, "Schummler sieht sich selbst auf Platz 1");
+  const viewH = await call("/v1/daily", { id: h.id, token: h.token, day: day2, lang: "de" });
+  ok(!viewH.top.some((x) => x.name === "Schummler") && viewH.top.some((x) => x.name === "Ehrlich" && x.me), "Andere sehen den Schummler nicht, ehrliches Ergebnis zählt");
+  const fl = await env.DB.prepare("SELECT reason FROM flags WHERE player = ?").bind(s.id).first();
+  ok(fl && fl.reason === "nolog", `Grund gemerkt (${fl && fl.reason})`);
+  // Duell: B schummelt → keine Wertung
+  const [da, dbb] = [await reg("DuellA"), await reg("DuellB")];
+  const md = (await call("/v1/match/start", { id: da.id, token: da.token, len: 3 })).match;
+  const dl = mk([[1, ["GARTEN"]], [2, ["GARTEN"]], [3, ["GARTEN", "GARTEN"], ["eile"]]]), dp = dl.reduce((a, x) => a + x.p, 0);
+  const sa = await call("/v1/match/submit", { id: da.id, token: da.token, mid: md.id, points: dp, secs: 90, rounds: 3, log: dl });
+  ok(sa.ok && sa.match.status === "open", "A: ehrliches Duell-Ergebnis");
+  const mb = (await call("/v1/match/start", { id: dbb.id, token: dbb.token, len: 3 })).match;
+  const sb = await call("/v1/match/submit", { id: dbb.id, token: dbb.token, mid: mb.id, points: 99999, secs: 90, rounds: 3, log: dl });
+  ok(mb.id === md.id && sb.ok && sb.match.delta === null && sb.rating === 1000, `B schummelt: Duell ohne Wertung (${sb.match.delta})`);
+  const la = (await call("/v1/match/list", { id: da.id, token: da.token }));
+  ok(la.rating === 1000 && la.duels === 0, "A verliert keine Wertung");
+  // A schummelt → Duell wird keinem Gegner gegeben
+  const mc = (await call("/v1/match/start", { id: da.id, token: da.token, len: 3 })).match;
+  await call("/v1/match/submit", { id: da.id, token: da.token, mid: mc.id, points: 99999, secs: 90, rounds: 3 });
+  const other = (await call("/v1/match/start", { id: h.id, token: h.token, len: 3 })).match;
+  ok(other.id !== mc.id && other.role === "a", "Auffälliges Duell bekommt keinen Gegner");
+  env.VERIFY = "off";
 }
 
 console.log("Melden und Löschen");

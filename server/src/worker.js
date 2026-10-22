@@ -2,6 +2,7 @@
 // Stufe 1: Ranglisten der Tages-Challenge (je Sprache, Filter Land) und Wochen-Liga (Gruppen à 30, Auf- und Abstieg).
 // Alle Antworten sind JSON. Spieler melden sich ohne Konto an: das Gerät bekommt eine geheime ID + Schlüssel.
 import { cleanName } from "./names.js";
+import { verifyLog } from "./verify.js";
 
 const LANGS = ["de", "en", "es", "fr", "pt"];
 export const TIERS = 7;            // 0 Bronze, 1 Silber, 2 Gold, 3 Smaragd, 4 Saphir, 5 Rubin, 6 Diamant
@@ -105,6 +106,7 @@ export async function cleanup(env, now) {
     env.DB.prepare("DELETE FROM xp_days WHERE day < ?").bind(day),
     env.DB.prepare("DELETE FROM reports WHERE at < ?").bind(cut),
     env.DB.prepare("DELETE FROM matches WHERE created < ?").bind(now - 60 * 86400000),
+    env.DB.prepare("DELETE FROM flags WHERE at < ?").bind(now - 90 * 86400000),
   ]);
 }
 
@@ -155,7 +157,7 @@ async function addXp(env, p, xp, now) {
 const boardCache = new Map();
 export const clearCache = () => boardCache.clear();
 async function dailyBoard(env, day, lang, country, meId, fresh = false) {
-  const where = country ? "d.day = ? AND d.lang = ? AND p.country = ?" : "d.day = ? AND d.lang = ?";
+  const where = (country ? "d.day = ? AND d.lang = ? AND p.country = ?" : "d.day = ? AND d.lang = ?") + " AND d.flag = 0";
   const args = country ? [day, lang, country] : [day, lang];
   const ck = `${day}|${lang}|${country || ""}`, hit = boardCache.get(ck);
   let top, total;
@@ -175,10 +177,24 @@ async function dailyBoard(env, day, lang, country, meId, fresh = false) {
         AND (d.rounds > ? OR (d.rounds = ? AND d.points > ?) OR (d.rounds = ? AND d.points = ? AND d.secs < ?))`)
         .bind(...args, m.rounds, m.rounds, m.points, m.rounds, m.points, m.secs).first()).n;
       me = { rank: better + 1, rounds: m.rounds, points: m.points, secs: m.secs };
+      if (m.flag) { // auffälliges Ergebnis: nur für den Spieler selbst in der Liste
+        total += 1;
+        const pr = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(meId).first();
+        if (pr && (!country || pr.country === country) && better < 50) top = [...top.slice(0, better), { ...m, ...pr, id: meId }, ...top.slice(better)].slice(0, 50);
+      }
     }
   }
   return { ok: true, day, lang, country: country || null, total, me,
     top: top.map((r, i) => ({ rank: i + 1, rounds: r.rounds, points: r.points, secs: r.secs, ...publicRow(r, meId) })) };
+}
+
+// Ergebnis prüfen (verify.js); env.VERIFY = "off" schaltet die Prüfung ab (nur für Tests)
+async function check(env, p, kind, log, res, now) {
+  if (env.VERIFY === "off") return 0;
+  let why; try { why = verifyLog(log, res); } catch (e) { why = "error"; }
+  if (!why) return 0;
+  await env.DB.prepare("INSERT INTO flags (player, kind, reason, at) VALUES (?, ?, ?, ?)").bind(p.id, kind, String(why).slice(0, 80), now).run();
+  return 1;
 }
 
 // ── Online-Duelle (wie Quizduell: gleiche Karten, nacheinander) ──
@@ -197,7 +213,7 @@ const matchView = (m, meId, opp) => {
 async function matchStart(env, p, len, now) {
   // 1. offenes Duell eines anderen Spielers mit ähnlicher Wertung (gleiche Sprache und Länge), nicht gegen sich selbst
   const cand = await env.DB.prepare(`SELECT * FROM matches WHERE lang = ? AND len = ? AND a != ? AND target IS NULL
-      AND (status = 'open' OR (status = 'claimed' AND claimed < ?)) ORDER BY ABS(a_rating - ?) ASC, created ASC LIMIT 5`)
+      AND a_flag = 0 AND (status = 'open' OR (status = 'claimed' AND claimed < ?)) ORDER BY ABS(a_rating - ?) ASC, created ASC LIMIT 5`)
     .bind(p.lang, len, p.id, now - CLAIM_TIMEOUT, p.rating).all();
   for (const m of cand.results) {
     const r = await env.DB.prepare("UPDATE matches SET status = 'claimed', b = ?, claimed = ? WHERE id = ? AND (status = 'open' OR (status = 'claimed' AND claimed < ?))")
@@ -218,24 +234,29 @@ async function matchSubmit(env, p, b, now) {
   if (!m) return { error: "match" };
   const points = int(b.points, 0, 50000000), secs = int(b.secs, 1, 86400), rounds = int(b.rounds, 0, 20);
   if (points == null || secs == null || rounds == null || rounds > m.len) return { error: "score" };
+  const res = { lang: m.lang, rounds, points, secs, len: m.len };
   if (m.a === p.id && m.status === "playing_a") {
-    await env.DB.prepare("UPDATE matches SET a_points = ?, a_secs = ?, a_rounds = ?, status = 'open' WHERE id = ? AND status = 'playing_a'").bind(points, secs, rounds, m.id).run();
+    const flag = await check(env, p, "duel", b.log, res, now);
+    await env.DB.prepare("UPDATE matches SET a_points = ?, a_secs = ?, a_rounds = ?, a_flag = ?, status = 'open' WHERE id = ? AND status = 'playing_a'").bind(points, secs, rounds, flag, m.id).run();
     const opp = m.target ? await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(m.target).first() : null;
     return { match: matchView({ ...m, status: "open", a_points: points, a_secs: secs, a_rounds: rounds }, p.id, opp) };
   }
   if (m.b === p.id && m.status === "claimed") {
     const a = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(m.a).first();
-    const res = duelWin(points, secs, m.a_points, m.a_secs); // aus Sicht von B
-    const db = a ? elo(p.rating, a.rating, res) : 0, da = a ? elo(a.rating, p.rating, -res) : 0;
+    const bflag = await check(env, p, "duel", b.log, res, now), rated = a && !bflag && !m.a_flag; // auffällig → Duell zählt nicht für die Wertung
+    const win = duelWin(points, secs, m.a_points, m.a_secs); // aus Sicht von B
+    const db = rated ? elo(p.rating, a.rating, win) : null, da = rated ? elo(a.rating, p.rating, -win) : null;
     const stmts = [
-      env.DB.prepare("UPDATE matches SET b_points = ?, b_secs = ?, b_rounds = ?, status = 'done', finished = ?, a_delta = ?, b_delta = ?, b_seen = 1 WHERE id = ? AND status = 'claimed'")
-        .bind(points, secs, rounds, now, da, db, m.id),
-      env.DB.prepare("UPDATE players SET rating = MAX(0, rating + ?), duels = duels + 1, duel_wins = duel_wins + ? WHERE id = ?").bind(db, res === 1 ? 1 : 0, p.id),
+      env.DB.prepare("UPDATE matches SET b_points = ?, b_secs = ?, b_rounds = ?, b_flag = ?, status = 'done', finished = ?, a_delta = ?, b_delta = ?, b_seen = 1 WHERE id = ? AND status = 'claimed'")
+        .bind(points, secs, rounds, bflag, now, da, db, m.id),
     ];
-    if (a) stmts.push(env.DB.prepare("UPDATE players SET rating = MAX(0, rating + ?), duels = duels + 1, duel_wins = duel_wins + ? WHERE id = ?").bind(da, res === -1 ? 1 : 0, a.id));
+    const res2 = win;
+    if (rated) stmts.push(env.DB.prepare("UPDATE players SET rating = MAX(0, rating + ?), duels = duels + 1, duel_wins = duel_wins + ? WHERE id = ?").bind(db, res2 === 1 ? 1 : 0, p.id));
+    if (rated) stmts.push(env.DB.prepare("UPDATE players SET rating = MAX(0, rating + ?), duels = duels + 1, duel_wins = duel_wins + ? WHERE id = ?").bind(da, res2 === -1 ? 1 : 0, a.id));
     await env.DB.batch(stmts);
     const done = { ...m, status: "done", b_points: points, b_secs: secs, b_rounds: rounds, finished: now, a_delta: da, b_delta: db, b_seen: 1 };
-    return { match: matchView(done, p.id, a), rating: Math.max(0, p.rating + db) };
+    const mine = rated ? Math.max(0, p.rating + db) : p.rating;
+    return { match: matchView(done, p.id, a), rating: mine };
   }
   return { error: "state" };
 }
@@ -255,7 +276,7 @@ async function matchList(env, p, now) {
 }
 
 // Datenbank auf den neuesten Stand bringen (neue Spalten), einmal je Version
-const SCHEMA = 4;
+const SCHEMA = 5;
 let migrated = false;
 async function migrate(env) {
   if (migrated) return;
@@ -268,7 +289,9 @@ async function migrate(env) {
       "ALTER TABLE players ADD COLUMN rating INTEGER NOT NULL DEFAULT 1000", "ALTER TABLE players ADD COLUMN duels INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE players ADD COLUMN duel_wins INTEGER NOT NULL DEFAULT 0", `CREATE TABLE IF NOT EXISTS matches (   id TEXT PRIMARY KEY, seed INTEGER NOT NULL, len INTEGER NOT NULL, lang TEXT NOT NULL,   status TEXT NOT NULL,              -- playing_a (A spielt) → open (wartet auf B) → claimed (B spielt) → done   a TEXT NOT NULL, b TEXT, target TEXT, a_rating INTEGER NOT NULL DEFAULT 1000,   a_points INTEGER, a_secs INTEGER, a_rounds INTEGER, b_points INTEGER, b_secs INTEGER, b_rounds INTEGER,   a_delta INTEGER, b_delta INTEGER, a_seen INTEGER NOT NULL DEFAULT 0, b_seen INTEGER NOT NULL DEFAULT 0,   created INTEGER NOT NULL, claimed INTEGER, finished INTEGER )`,
       "CREATE INDEX IF NOT EXISTS match_open ON matches (status, lang, len, created)", "CREATE INDEX IF NOT EXISTS match_a ON matches (a, created)",
-      "CREATE INDEX IF NOT EXISTS match_b ON matches (b, created)", "CREATE INDEX IF NOT EXISTS match_t ON matches (target, status)"]) {
+      "CREATE INDEX IF NOT EXISTS match_b ON matches (b, created)", "CREATE INDEX IF NOT EXISTS match_t ON matches (target, status)",
+      "ALTER TABLE daily ADD COLUMN flag INTEGER NOT NULL DEFAULT 0", "ALTER TABLE matches ADD COLUMN a_flag INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE matches ADD COLUMN b_flag INTEGER NOT NULL DEFAULT 0", "CREATE TABLE IF NOT EXISTS flags (player TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL)"]) {
       try { await env.DB.prepare(sql).run(); } catch { /* Spalte gibt es schon */ }
     }
     await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', ?)").bind(String(SCHEMA)).run();
@@ -311,7 +334,7 @@ async function handle(req, env, now) {
     return json({ ok: true, name });
   }
   if (path === "/v1/delete") { // alle Daten dieses Spielers löschen (Datenschutz)
-    await env.DB.batch(["players WHERE id", "daily WHERE player", "league_members WHERE player", "league_results WHERE player", "xp_days WHERE player", "reports WHERE reporter", "matches WHERE a", "matches WHERE b"]
+    await env.DB.batch(["players WHERE id", "daily WHERE player", "league_members WHERE player", "league_results WHERE player", "xp_days WHERE player", "reports WHERE reporter", "matches WHERE a", "matches WHERE b", "flags WHERE player"]
       .map((t) => env.DB.prepare(`DELETE FROM ${t} = ?`).bind(p.id)));
     boardCache.clear();
     return json({ ok: true });
@@ -325,8 +348,12 @@ async function handle(req, env, now) {
       const rounds = int(b.rounds, 0, 40), points = int(b.points, 0, 50000000), secs = int(b.secs, 1, 86400);
       if (rounds == null || points == null || secs == null) return fail("score");
       // erster Versuch zählt; spätere Einsendungen desselben Tages werden ignoriert
-      await env.DB.prepare("INSERT OR IGNORE INTO daily (day, lang, player, rounds, points, secs, at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .bind(day, lang, p.id, rounds, points, secs, now).run();
+      const old = await env.DB.prepare("SELECT 1 FROM daily WHERE day = ? AND lang = ? AND player = ?").bind(day, lang, p.id).first();
+      if (!old) {
+        const flag = await check(env, p, "daily", b.log, { lang, rounds, points, secs }, now);
+        await env.DB.prepare("INSERT OR IGNORE INTO daily (day, lang, player, rounds, points, secs, at, flag) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(day, lang, p.id, rounds, points, secs, now, flag).run();
+      }
     }
     return json(await dailyBoard(env, day, lang, cleanCountry(b.country), p.id, b.rounds != null));
   }

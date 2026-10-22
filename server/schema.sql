@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS players (
 CREATE TABLE IF NOT EXISTS daily (
   day TEXT NOT NULL, lang TEXT NOT NULL, player TEXT NOT NULL,
   rounds INTEGER NOT NULL, points INTEGER NOT NULL, secs INTEGER NOT NULL, at INTEGER NOT NULL,
+  flag INTEGER NOT NULL DEFAULT 0,   -- 1 = Prüfung fehlgeschlagen: nur der Spieler selbst sieht das Ergebnis
   PRIMARY KEY (day, lang, player)
 );
 CREATE INDEX IF NOT EXISTS daily_rank ON daily (day, lang, rounds DESC, points DESC, secs ASC);
@@ -60,11 +61,15 @@ CREATE TABLE IF NOT EXISTS matches (
   a TEXT NOT NULL, b TEXT, target TEXT, a_rating INTEGER NOT NULL DEFAULT 1000,
   a_points INTEGER, a_secs INTEGER, a_rounds INTEGER, b_points INTEGER, b_secs INTEGER, b_rounds INTEGER,
   a_delta INTEGER, b_delta INTEGER, a_seen INTEGER NOT NULL DEFAULT 0, b_seen INTEGER NOT NULL DEFAULT 0,
-  created INTEGER NOT NULL, claimed INTEGER, finished INTEGER
+  created INTEGER NOT NULL, claimed INTEGER, finished INTEGER,
+  a_flag INTEGER NOT NULL DEFAULT 0, b_flag INTEGER NOT NULL DEFAULT 0 -- Prüfung fehlgeschlagen → keine Wertung
 );
 CREATE INDEX IF NOT EXISTS match_open ON matches (status, lang, len, created);
 CREATE INDEX IF NOT EXISTS match_a ON matches (a, created);
 CREATE INDEX IF NOT EXISTS match_b ON matches (b, created);
 CREATE INDEX IF NOT EXISTS match_t ON matches (target, status);
+
+-- Auffällige Ergebnisse (zum Nachsehen, ob die Prüfung zu streng ist)
+CREATE TABLE IF NOT EXISTS flags (player TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL);
 
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
