@@ -74,6 +74,17 @@ export async function finalizeWeek(env, week, now = Date.now()) {
   return true;
 }
 const prevWeek = (now) => weekOf(now - 7 * 86400000);
+// Alte Ergebnisse löschen (versprochen in der Datenschutzerklärung: nach spätestens 12 Monaten)
+export async function cleanup(env, now) {
+  const cut = now - 365 * 86400000, wk = weekOf(cut), day = utcDay(cut);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM daily WHERE at < ?").bind(cut),
+    env.DB.prepare("DELETE FROM league_members WHERE last_at < ?").bind(cut),
+    env.DB.prepare("DELETE FROM league_results WHERE week < ?").bind(wk),
+    env.DB.prepare("DELETE FROM xp_days WHERE day < ?").bind(day),
+    env.DB.prepare("DELETE FROM reports WHERE at < ?").bind(cut),
+  ]);
+}
 
 async function leagueState(env, p, now) {
   const week = weekOf(now);
@@ -224,6 +235,6 @@ export default {
     catch (e) { return json({ ok: false, error: "server" }, 500); }
   },
   // Montag kurz nach Mitternacht (UTC): letzte Woche abschließen (passiert sonst auch beim nächsten Aufruf)
-  async scheduled(event, env) { await finalizeWeek(env, prevWeek(Date.now())); },
+  async scheduled(event, env) { await finalizeWeek(env, prevWeek(Date.now())); await cleanup(env, Date.now()); },
 };
 export { handle };

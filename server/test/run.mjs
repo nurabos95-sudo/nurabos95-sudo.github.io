@@ -1,6 +1,6 @@
 // Tests für den Worker (ohne Cloudflare): node --experimental-sqlite server/test/run.mjs
 import { D1 } from "./d1shim.mjs";
-import { handle, weekOf, weekEnd } from "../src/worker.js";
+import { handle, weekOf, weekEnd, cleanup } from "../src/worker.js";
 import { cleanName } from "../src/names.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -84,5 +84,12 @@ ok((await call("/v1/daily", { id: b.id, token: b.token, day, lang: "de" })).top.
 ok((await call("/v1/delete", { id: a.id, token: a.token })).ok, "Daten löschen");
 ok((await call("/v1/league", { id: a.id, token: a.token })).error === "auth" && (await call("/v1/daily", { id: b.id, token: b.token, day, lang: "de" })).total === 2, "Spieler und Einträge weg");
 
+console.log("Aufräumen");
+const cnt = async (t) => (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${t}`).first()).n;
+const before = await cnt("daily");
+await cleanup(env, Date.UTC(2027, 5, 1));
+ok((await cnt("daily")) === before, "Nach 7 Monaten bleibt alles");
+await cleanup(env, Date.UTC(2027, 11, 1));
+ok((await cnt("daily")) === 0 && (await cnt("league_members")) === 0 && (await cnt("league_results")) === 0, "Nach über 12 Monaten: alte Ergebnisse gelöscht");
 console.log(weekOf(Date.UTC(2026, 11, 31)), weekOf(Date.UTC(2027, 0, 4)));
 console.log("FEHLER:", errors.length ? errors : "keine");
