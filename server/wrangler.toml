@@ -1,0 +1,13 @@
+# Wortpoker online (Cloudflare Worker). Die Datenbank-ID trägt der GitHub-Workflow beim Hochladen selbst ein.
+name = "wortpoker-online"
+main = "src/worker.js"
+compatibility_date = "2026-06-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wortpoker"
+database_id = "DATABASE_ID"
+
+# Montag 00:05 UTC: letzte Liga-Woche abschließen
+[triggers]
+crons = ["5 0 * * 1"]
