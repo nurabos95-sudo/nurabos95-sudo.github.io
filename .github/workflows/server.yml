@@ -1,0 +1,56 @@
+# Lädt den Wortpoker-Online-Server (server/) zu Cloudflare hoch und schreibt seine Adresse in online.json (liest die App).
+# Braucht zwei Secrets im Repository: CLOUDFLARE_API_TOKEN und CLOUDFLARE_ACCOUNT_ID (Anleitung: server/README.md).
+name: Online-Server hochladen
+on:
+  push:
+    branches: [main]
+    paths: ["server/**", ".github/workflows/server.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: server-deploy
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Server testen
+        run: |
+          node --experimental-sqlite --no-warnings server/test/run.mjs | tee /tmp/test.log
+          grep -q "FEHLER: keine" /tmp/test.log
+      - name: Cloudflare-Schlüssel vorhanden?
+        id: key
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then echo "ok=1" >> "$GITHUB_OUTPUT"
+          else echo "::warning::Die Secrets CLOUDFLARE_API_TOKEN und CLOUDFLARE_ACCOUNT_ID fehlen – der Server wurde nur getestet, nicht hochgeladen."; fi
+      - name: Datenbank anlegen und Worker hochladen
+        if: steps.key.outputs.ok == '1'
+        working-directory: server
+        run: |
+          npm i -g wrangler@4
+          dbid() { wrangler d1 list --json | jq -r '.[] | select(.name=="wortpoker") | .uuid'; }
+          ID=$(dbid)
+          if [ -z "$ID" ]; then wrangler d1 create wortpoker; ID=$(dbid); fi
+          test -n "$ID"
+          sed -i "s/DATABASE_ID/$ID/" wrangler.toml
+          wrangler d1 execute wortpoker --remote --file=schema.sql
+          wrangler deploy 2>&1 | tee /tmp/deploy.log
+          URL=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' /tmp/deploy.log | head -1)
+          test -n "$URL"
+          curl -fsS "$URL/v1/ping"
+          echo "URL=$URL" >> "$GITHUB_ENV"
+      - name: Adresse für die App veröffentlichen
+        if: env.URL != ''
+        run: |
+          printf '{"api": "%s"}\n' "$URL" > online.json
+          if ! git diff --quiet online.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add online.json && git commit -m "Online-Server: Adresse aktualisiert" && git push
+          fi
