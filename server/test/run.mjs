@@ -79,6 +79,55 @@ ok(cl.claimed === false && (await call("/v1/league", { id: a.id, token: a.token 
 r = await call("/v1/xp", { id: a.id, token: a.token, xp: 50 });
 ok(r.joined && r.tier === 1 && r.members.length === 1, "Neue Woche in der Silber-Liga");
 
+console.log("Online-Duelle");
+{
+  const [x, y, z] = [ps[10], ps[11], ps[12]];
+  const st = async (p, len = 5) => (await call("/v1/match/start", { id: p.id, token: p.token, len })).match;
+  const sub = async (p, mid, points, secs, rounds = 5) => call("/v1/match/submit", { id: p.id, token: p.token, mid, points, secs, rounds });
+  const m1 = await st(x);
+  ok(m1.role === "a" && m1.fresh && m1.seed > 0, "Kein offenes Duell → neues Duell, ich spiele zuerst");
+  const m1b = await st(y);
+  ok(m1b.role === "a" && m1b.id !== m1.id, "Duell, das noch gespielt wird, wird nicht vergeben");
+  let s1 = await sub(x, m1.id, 900, 200);
+  ok(s1.ok && s1.match.status === "open", "Ergebnis von A → Duell wartet auf Gegner");
+  ok((await sub(x, m1.id, 9999, 1)).error === "state", "Zweites Ergebnis wird abgelehnt");
+  const m2 = await st(x, 5);
+  ok(m2.id !== m1.id, "Nicht gegen sich selbst");
+  const mz = await st(z, 5);
+  ok(mz.id === m1.id && mz.role === "b" && mz.seed === m1.seed && mz.opp.name === x.name, `B bekommt dieselben Karten (${mz.opp && mz.opp.name})`);
+  ok(mz.opp.points === undefined, "Punkte des Gegners erst nach dem eigenen Spiel");
+  const s2 = await sub(z, m1.id, 1200, 300);
+  ok(s2.ok && s2.match.status === "done" && s2.match.delta === 12 && s2.match.opp.points === 900 && s2.rating === 1012, `Sieg: +12 Wertung (${JSON.stringify(s2.match.delta)})`);
+  const lx = await call("/v1/match/list", { id: x.id, token: x.token });
+  const d = lx.matches.find((m) => m.id === m1.id);
+  ok(d && d.delta === -12 && !d.seen && d.opp.points === 1200 && lx.rating === 988 && lx.duels === 1 && lx.wins === 0, `A sieht Ergebnis und Wertung (${lx.rating})`);
+  await call("/v1/match/seen", { id: x.id, token: x.token, mid: m1.id });
+  ok((await call("/v1/match/list", { id: x.id, token: x.token })).matches.find((m) => m.id === m1.id).seen, "Als gesehen markiert");
+  // Abgebrochen: B spielt nicht zu Ende → nach 2 Stunden wieder frei
+  await sub(y, m1b.id, 500, 100);
+  const c1 = await st(z, 5);
+  ok(c1.id === m1b.id || c1.id === m2.id, "Nächstes offenes Duell");
+  const keep = NOW; NOW += 3 * 3600000;
+  const other = c1.id === m1b.id ? m1b : m2; // anderes Duell wurde noch nicht gespielt
+  const c2 = await st(ps[13], 5);
+  ok(c2.id === c1.id || c2.id === other.id, "Liegengebliebenes Duell geht nach 2 h an andere");
+  NOW = keep;
+  // Revanche
+  const ch = await call("/v1/match/challenge", { id: z.id, token: z.token, target: x.pub, len: 3 });
+  ok(ch.ok && ch.match.len === 3 && ch.match.challenge, "Revanche angelegt");
+  await sub(z, ch.match.id, 700, 90, 3);
+  ok((await st(ps[14], 3)).id !== ch.match.id, "Herausforderung geht nicht an Fremde");
+  const inv = (await call("/v1/match/list", { id: x.id, token: x.token })).matches.find((m) => m.id === ch.match.id);
+  ok(inv && inv.role === "invite" && inv.opp.name === z.name, "Herausgeforderter sieht die Einladung");
+  const acc = await call("/v1/match/accept", { id: x.id, token: x.token, mid: ch.match.id });
+  ok(acc.ok && acc.match.seed === ch.match.seed && acc.match.role === "b", "Revanche angenommen");
+  const s3 = await sub(x, ch.match.id, 700, 80, 3);
+  ok(s3.match.delta > 0, `Gleiche Punkte → schneller gewinnt (${s3.match.delta})`);
+  const card = await call("/v1/player", { id: y.id, token: y.token, target: x.pub });
+  ok(card.player.rating === lx.rating + s3.match.delta && card.player.onlineDuels === 2 && card.player.onlineWins === 1, `Profilkarte: Wertung und Online-Duelle (${card.player.rating})`);
+  ok((await call("/v1/match/submit", { id: y.id, token: y.token, mid: m1.id, points: 1, secs: 1, rounds: 1 })).error === "state", "Fremdes Duell → abgelehnt");
+}
+
 console.log("Melden und Löschen");
 for (const x of [b, c, ps[5]]) await call("/v1/report", { id: x.id, token: x.token, target: a.pub });
 r = await call("/v1/league", { id: ps[6].id, token: ps[6].token });
