@@ -37,11 +37,23 @@ const cleanLook = (l) => {
   if (!l || typeof l !== "object") return "{}";
   const o = {};
   for (const k of ["char", "hat", "glasses", "outfit", "pin", "color"]) { const n = int(l[k], 0, 99); if (n != null) o[k] = n; }
-  for (const k of ["frame", "skin"]) if (typeof l[k] === "string" && /^[a-z0-9-]{1,24}$/.test(l[k])) o[k] = l[k];
+  for (const k of ["frame", "skin", "nfx", "dance"]) if (typeof l[k] === "string" && /^[a-z0-9-]{1,24}$/.test(l[k])) o[k] = l[k];
+  return JSON.stringify(o);
+};
+// Profil-Statistik: nur bekannte Zahlen und bis zu 3 Erfolge für die Vitrine
+const STAT_KEYS = ["ach", "achTotal", "duels", "duelWins", "ghosts", "record", "stars", "bosses", "games", "words", "wins"];
+const cleanStats = (st) => {
+  if (!st || typeof st !== "object") return "{}";
+  const o = {};
+  for (const k of STAT_KEYS) { const n = int(st[k], 0, 100000000); if (n != null) o[k] = n; }
+  if (Array.isArray(st.showcase)) o.showcase = st.showcase.filter((x) => typeof x === "string" && /^[a-z0-9]{1,24}$/i.test(x)).slice(0, 3);
   return JSON.stringify(o);
 };
 const cleanCountry = (c) => (typeof c === "string" && /^[A-Z]{2}$/.test(c) ? c : "");
-const publicRow = (r, me) => ({ pub: r.pub, name: r.hidden ? null : r.name, country: r.country, gold: !!r.gold, look: safeParse(r.look), me: r.id === me || undefined });
+const trophyCount = (t) => Object.values(safeParse(t)).reduce((a, v) => a + (Array.isArray(v) ? v[0] + v[1] + v[2] : 0), 0);
+const publicRow = (r, me) => ({ pub: r.pub, name: r.hidden ? null : r.name, country: r.country, gold: !!r.gold, look: safeParse(r.look), tro: trophyCount(r.trophies) || undefined, me: r.id === me || undefined });
+// Kronen je Platz (Wochen-Liga): 1. 12, 2. 8, 3. 6, Aufstiegszone 3, sonst 1 – höhere Ligen geben mehr (× (4 + Stufe) / 4)
+export const CROWN_SQL = `((CASE WHEN rk = 1 THEN 12 WHEN rk = 2 THEN 8 WHEN rk = 3 THEN 6 WHEN rk <= ${PROMOTE} THEN 3 ELSE 1 END) * (4 + tier)) / 4`;
 const safeParse = (s) => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
 
 async function auth(env, b) {
@@ -59,18 +71,27 @@ export async function finalizeWeek(env, week, now = Date.now()) {
   const any = await env.DB.prepare("SELECT last_at FROM league_members WHERE week = ? LIMIT 1").bind(week).first();
   if (any && weekEnd(any.last_at) > now) return false; // Woche läuft noch
   await env.DB.batch([
-    env.DB.prepare(`INSERT OR IGNORE INTO league_results (week, player, tier, grp, rank, size, new_tier, claimed)
+    env.DB.prepare(`INSERT OR IGNORE INTO league_results (week, player, tier, grp, rank, size, new_tier, claimed, crowns)
       SELECT week, player, tier, grp, rk, sz,
         CASE WHEN rk <= ${PROMOTE} AND tier < ${TIERS - 1} THEN tier + 1
-             WHEN sz >= 10 AND rk > sz - ${DEMOTE} AND tier > 0 THEN tier - 1 ELSE tier END, 0
+             WHEN sz >= 10 AND rk > sz - ${DEMOTE} AND tier > 0 THEN tier - 1 ELSE tier END, 0, ${CROWN_SQL}
       FROM (SELECT week, player, tier, grp,
               ROW_NUMBER() OVER (PARTITION BY grp ORDER BY xp DESC, last_at ASC) AS rk,
               COUNT(*) OVER (PARTITION BY grp) AS sz
             FROM league_members WHERE week = ? AND xp > 0)`).bind(week),
-    env.DB.prepare(`UPDATE players SET tier = (SELECT new_tier FROM league_results r WHERE r.week = ? AND r.player = players.id)
-      WHERE id IN (SELECT player FROM league_results WHERE week = ?)`).bind(week, week),
+    env.DB.prepare(`UPDATE players SET tier = (SELECT new_tier FROM league_results r WHERE r.week = ? AND r.player = players.id), weeks = weeks + 1,
+        best_tier = MAX(best_tier, (SELECT new_tier FROM league_results r WHERE r.week = ? AND r.player = players.id))
+      WHERE id IN (SELECT player FROM league_results WHERE week = ?)`).bind(week, week, week),
     env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES (?, ?)").bind("final:" + week, String(now)),
   ]);
+  // Pokale für Platz 1–3 (Gold, Silber, Bronze) je Liga-Stufe
+  const pods = await env.DB.prepare(`SELECT r.player, r.tier, r.rank, p.trophies FROM league_results r JOIN players p ON p.id = r.player WHERE r.week = ? AND r.rank <= 3`).bind(week).all();
+  const ups = pods.results.map((r) => {
+    const t = safeParse(r.trophies), k = String(r.tier), a = Array.isArray(t[k]) ? t[k] : [0, 0, 0];
+    a[r.rank - 1] += 1; t[k] = a;
+    return env.DB.prepare("UPDATE players SET trophies = ? WHERE id = ?").bind(JSON.stringify(t), r.player);
+  });
+  for (let i = 0; i < ups.length; i += 50) await env.DB.batch(ups.slice(i, i + 50));
   return true;
 }
 const prevWeek = (now) => weekOf(now - 7 * 86400000);
@@ -89,18 +110,19 @@ export async function cleanup(env, now) {
 async function leagueState(env, p, now) {
   const week = weekOf(now);
   await finalizeWeek(env, prevWeek(now), now);
-  const fresh = await env.DB.prepare("SELECT tier FROM players WHERE id = ?").bind(p.id).first();
+  const fresh = await env.DB.prepare("SELECT tier, trophies, best_tier, weeks FROM players WHERE id = ?").bind(p.id).first();
   const me = await env.DB.prepare("SELECT * FROM league_members WHERE week = ? AND player = ?").bind(week, p.id).first();
   let members = [];
   if (me) {
-    const rows = await env.DB.prepare(`SELECT m.xp, m.player, p.id, p.pub, p.name, p.country, p.gold, p.look, p.hidden
+    const rows = await env.DB.prepare(`SELECT m.xp, m.player, p.id, p.pub, p.name, p.country, p.gold, p.look, p.hidden, p.trophies
       FROM league_members m JOIN players p ON p.id = m.player WHERE m.week = ? AND m.grp = ? ORDER BY m.xp DESC, m.last_at ASC`).bind(week, me.grp).all();
     members = rows.results.map((r, i) => ({ rank: i + 1, xp: r.xp, ...publicRow(r, p.id) }));
   }
   const last = await env.DB.prepare("SELECT * FROM league_results WHERE player = ? AND claimed = 0 ORDER BY week DESC LIMIT 1").bind(p.id).first();
   return {
     ok: true, week, endsAt: weekEnd(now), tier: me ? me.tier : fresh.tier, joined: !!me, members, promote: PROMOTE, demote: DEMOTE, group: GROUP,
-    result: last ? { week: last.week, rank: last.rank, size: last.size, tier: last.tier, newTier: last.new_tier } : null,
+    result: last ? { week: last.week, rank: last.rank, size: last.size, tier: last.tier, newTier: last.new_tier, crowns: last.crowns } : null,
+    mine: { trophies: safeParse(fresh.trophies), bestTier: fresh.best_tier, weeks: fresh.weeks },
   };
 }
 
@@ -138,7 +160,7 @@ async function dailyBoard(env, day, lang, country, meId, fresh = false) {
   let top, total;
   if (hit && !fresh && Date.now() - hit.at < 30000) ({ top, total } = hit);
   else {
-    top = (await env.DB.prepare(`SELECT d.rounds, d.points, d.secs, p.id, p.pub, p.name, p.country, p.gold, p.look, p.hidden
+    top = (await env.DB.prepare(`SELECT d.rounds, d.points, d.secs, p.id, p.pub, p.name, p.country, p.gold, p.look, p.hidden, p.trophies
       FROM daily d JOIN players p ON p.id = d.player WHERE ${where} ORDER BY d.rounds DESC, d.points DESC, d.secs ASC LIMIT 50`).bind(...args).all()).results;
     total = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM daily d JOIN players p ON p.id = d.player WHERE ${where}`).bind(...args).first()).n;
     if (boardCache.size > 500) boardCache.clear();
@@ -158,8 +180,27 @@ async function dailyBoard(env, day, lang, country, meId, fresh = false) {
     top: top.map((r, i) => ({ rank: i + 1, rounds: r.rounds, points: r.points, secs: r.secs, ...publicRow(r, meId) })) };
 }
 
+// Datenbank auf den neuesten Stand bringen (neue Spalten), einmal je Version
+const SCHEMA = 3;
+let migrated = false;
+async function migrate(env) {
+  if (migrated) return;
+  const v = await env.DB.prepare("SELECT v FROM meta WHERE k = 'schema'").first().catch(() => null);
+  if (!v || Number(v.v) < SCHEMA) {
+    for (const sql of ["ALTER TABLE players ADD COLUMN trophies TEXT NOT NULL DEFAULT '{}'", "ALTER TABLE players ADD COLUMN best_tier INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE players ADD COLUMN weeks INTEGER NOT NULL DEFAULT 0", "ALTER TABLE players ADD COLUMN level INTEGER NOT NULL DEFAULT 1",
+      "ALTER TABLE players ADD COLUMN best_word TEXT NOT NULL DEFAULT ''", "ALTER TABLE players ADD COLUMN best_score INTEGER NOT NULL DEFAULT 0",
+      "ALTER TABLE league_results ADD COLUMN crowns INTEGER NOT NULL DEFAULT 0", "ALTER TABLE players ADD COLUMN stats TEXT NOT NULL DEFAULT '{}'"]) {
+      try { await env.DB.prepare(sql).run(); } catch { /* Spalte gibt es schon */ }
+    }
+    await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', ?)").bind(String(SCHEMA)).run();
+  }
+  migrated = true;
+}
+
 // ── Anfragen ──
 async function handle(req, env, now) {
+  await migrate(env);
   const url = new URL(req.url), path = url.pathname.replace(/\/+$/, "");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (req.method === "GET" && (path === "" || path === "/v1/ping")) return json({ ok: true, service: "wortpoker", time: now });
@@ -183,8 +224,11 @@ async function handle(req, env, now) {
   if (path === "/v1/profile") {
     const name = b.name == null ? p.name : cleanName(b.name); if (!name) return fail("name");
     const lang = LANGS.includes(b.lang) ? b.lang : p.lang;
-    await env.DB.prepare("UPDATE players SET name = ?, lang = ?, country = ?, gold = ?, look = ?, hidden = CASE WHEN name = ? THEN hidden ELSE 0 END WHERE id = ?")
-      .bind(name, lang, b.country == null ? p.country : cleanCountry(b.country), b.gold == null ? p.gold : b.gold ? 1 : 0, b.look == null ? p.look : cleanLook(b.look), name, p.id).run();
+    const level = int(b.level, 1, 99999) ?? p.level, bw = typeof b.bestWord === "string" && /^\p{L}{3,12}$/u.test(b.bestWord) ? b.bestWord.toUpperCase() : p.best_word;
+    const bs = bw === p.best_word && b.bestScore == null ? p.best_score : int(b.bestScore, 0, 10000000) ?? p.best_score;
+    await env.DB.prepare("UPDATE players SET name = ?, lang = ?, country = ?, gold = ?, look = ?, hidden = CASE WHEN name = ? THEN hidden ELSE 0 END, level = ?, best_word = ?, best_score = ?, stats = ? WHERE id = ?")
+      .bind(name, lang, b.country == null ? p.country : cleanCountry(b.country), b.gold == null ? p.gold : b.gold ? 1 : 0, b.look == null ? p.look : cleanLook(b.look), name, level, bw, bs,
+        b.stats == null ? p.stats : cleanStats(b.stats), p.id).run();
     boardCache.clear();
     return json({ ok: true, name });
   }
@@ -217,6 +261,12 @@ async function handle(req, env, now) {
   if (path === "/v1/league/claim") {
     const r = await env.DB.prepare("UPDATE league_results SET claimed = 1 WHERE player = ? AND week = ? AND claimed = 0").bind(p.id, String(b.week || "")).run();
     return json({ ok: true, claimed: (r.meta && r.meta.changes) > 0 });
+  }
+  if (path === "/v1/player") { // Profilkarte eines anderen Spielers (öffentliche Angaben)
+    const t = await env.DB.prepare("SELECT * FROM players WHERE pub = ?").bind(String(b.target || "")).first();
+    if (!t) return fail("target", 404);
+    return json({ ok: true, player: { ...publicRow(t, p.id), tier: t.tier, bestTier: t.best_tier, weeks: t.weeks, trophies: safeParse(t.trophies),
+      level: t.level, bestWord: t.hidden ? "" : t.best_word, bestScore: t.best_score, since: t.created, stats: safeParse(t.stats) } });
   }
   if (path === "/v1/report") {
     if (typeof b.target !== "string" || b.target === p.pub) return fail("target");
