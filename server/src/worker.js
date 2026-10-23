@@ -41,13 +41,14 @@ const cleanLook = (l) => {
   for (const k of ["frame", "skin", "nfx", "dance"]) if (typeof l[k] === "string" && /^[a-z0-9-]{1,24}$/.test(l[k])) o[k] = l[k];
   return JSON.stringify(o);
 };
-// Profil-Statistik: nur bekannte Zahlen und bis zu 3 Erfolge für die Vitrine
+// Profil-Statistik: nur bekannte Zahlen, bis zu 5 Vitrinen-Stücke (Erfolge, „b-…“ = Abzeichen) und die Abzeichen
 const STAT_KEYS = ["ach", "achTotal", "duels", "duelWins", "ghosts", "record", "stars", "bosses", "games", "words", "wins"];
 const cleanStats = (st) => {
   if (!st || typeof st !== "object") return "{}";
   const o = {};
   for (const k of STAT_KEYS) { const n = int(st[k], 0, 100000000); if (n != null) o[k] = n; }
-  if (Array.isArray(st.showcase)) o.showcase = st.showcase.filter((x) => typeof x === "string" && /^[a-z0-9]{1,24}$/i.test(x)).slice(0, 3);
+  if (Array.isArray(st.showcase)) o.showcase = st.showcase.filter((x) => typeof x === "string" && /^[a-z0-9-]{1,24}$/i.test(x)).slice(0, 5);
+  if (Array.isArray(st.badges)) o.badges = st.badges.filter((x) => typeof x === "string" && /^[a-z0-9-]{1,20}$/.test(x)).slice(0, 80);
   return JSON.stringify(o);
 };
 const cleanCountry = (c) => (typeof c === "string" && /^[A-Z]{2}$/.test(c) ? c : "");

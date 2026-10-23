@@ -74,7 +74,7 @@ const sec = await call("/v1/league", { id: ps[34 - 5].id, token: ps[34 - 5].toke
 await call("/v1/profile", { id: a.id, token: a.token, level: 26, bestWord: "Abenteuer", bestScore: 2910, look: { char: 16, nfx: "feuer", dance: "salto" },
   stats: { ach: 14, achTotal: 60, duels: 9, duelWins: 6, record: 11, showcase: ["wort7", "boss1", "palindrom", "zuviel"], evil: "<b>" } });
 const pc = await call("/v1/player", { id: b.id, token: b.token, target: a.pub });
-ok(pc.ok && pc.player.level === 26 && pc.player.bestWord === "ABENTEUER" && pc.player.trophies["0"][0] === 1 && pc.player.look.nfx === "feuer" && pc.player.stats.duelWins === 6 && pc.player.stats.showcase.length === 3 && !("evil" in pc.player.stats), `Profilkarte: Stufe, bestes Wort, Pokale, Namenseffekt (${JSON.stringify(pc.player)})`);
+ok(pc.ok && pc.player.level === 26 && pc.player.bestWord === "ABENTEUER" && pc.player.trophies["0"][0] === 1 && pc.player.look.nfx === "feuer" && pc.player.stats.duelWins === 6 && pc.player.stats.showcase.length === 4 && !("evil" in pc.player.stats), `Profilkarte: Stufe, bestes Wort, Pokale, Namenseffekt (${JSON.stringify(pc.player)})`);
 ok((await call("/v1/player", { id: b.id, token: b.token, target: "gibtsnicht" })).error === "target", "Unbekannter Spieler → Fehler");
 let cl = await call("/v1/league/claim", { id: a.id, token: a.token, week: "2026-W43" });
 ok(cl.claimed === true, "Belohnung abholen");
