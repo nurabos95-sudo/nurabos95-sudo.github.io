@@ -195,6 +195,32 @@ console.log("Ergebnis-Prüfung");
   env.VERIFY = "off";
 }
 
+console.log("Freunde");
+{
+  const [f1, f2, f3] = [await reg("Fritzi"), await reg("Fritz"), await reg("Fiona", "en", "GB")];
+  ok(f1.tag >= 1000 && f1.tag <= 9999, `Freundescode Fritzi#${f1.tag}`);
+  const sr = await call("/v1/friends/search", { id: f1.id, token: f1.token, q: "fri" });
+  ok(sr.players.length === 1 && sr.players[0].name === "Fritz" && sr.players[0].tag === f2.tag, "Suche „fri“ findet Fritz (nicht sich selbst, nicht andere Sprachen)");
+  ok((await call("/v1/friends/search", { id: f1.id, token: f1.token, q: "%" })).players.length === 0, "Platzhalter in der Suche wirken nicht");
+  let fr = await call("/v1/friends/add", { id: f1.id, token: f1.token, code: `fritz#${f2.tag}` });
+  ok(fr.ok && fr.friends.length === 1 && fr.friends[0].name === "Fritz", "Hinzufügen per Freundescode (Groß/klein egal)");
+  ok((await call("/v1/friends", { id: f2.id, token: f2.token })).friends[0].name === "Fritzi", "Freundschaft gilt in beide Richtungen");
+  ok((await call("/v1/friends/add", { id: f1.id, token: f1.token, code: "Fritz#0000" })).error === "target", "Falscher Code → Fehler");
+  await call("/v1/friends/add", { id: f1.id, token: f1.token, target: f3.pub });
+  ok((await call("/v1/match/challenge", { id: f1.id, token: f1.token, target: f3.pub, len: 3 })).error === "lang", "Duell nur in derselben Sprache");
+  const ch = await call("/v1/match/challenge", { id: f1.id, token: f1.token, target: f2.pub, len: 3 });
+  await call("/v1/match/submit", { id: f1.id, token: f1.token, mid: ch.match.id, points: 500, secs: 60, rounds: 3 });
+  await call("/v1/match/accept", { id: f2.id, token: f2.token, mid: ch.match.id });
+  await call("/v1/match/submit", { id: f2.id, token: f2.token, mid: ch.match.id, points: 400, secs: 60, rounds: 3 });
+  fr = await call("/v1/friends", { id: f1.id, token: f1.token });
+  const fz = fr.friends.find((x) => x.name === "Fritz");
+  ok(fz.w === 1 && fz.l === 0 && (await call("/v1/friends", { id: f2.id, token: f2.token })).friends[0].l === 1, "Bilanz unter Freunden: 1 : 0");
+  const ren = await call("/v1/profile", { id: f2.id, token: f2.token, name: "Fritzi" });
+  ok(ren.ok && (ren.tag !== f1.tag), `Umbenennen auf einen vergebenen Namen: neuer Code (${ren.tag})`);
+  fr = await call("/v1/friends/remove", { id: f1.id, token: f1.token, target: f2.pub });
+  ok(fr.friends.length === 1 && (await call("/v1/friends", { id: f2.id, token: f2.token })).friends.length === 0, "Entfernen: auf beiden Seiten weg");
+}
+
 console.log("Melden und Löschen");
 for (const x of [b, c, ps[5]]) await call("/v1/report", { id: x.id, token: x.token, target: a.pub });
 r = await call("/v1/league", { id: ps[6].id, token: ps[6].token });

@@ -188,6 +188,33 @@ async function dailyBoard(env, day, lang, country, meId, fresh = false) {
     top: top.map((r, i) => ({ rank: i + 1, rounds: r.rounds, points: r.points, secs: r.secs, ...publicRow(r, meId) })) };
 }
 
+// ── Freunde ──
+// Freundescode „Name#1234“: der Name allein ist nicht eindeutig, die 4 Ziffern machen ihn eindeutig.
+const MAX_FRIENDS = 200;
+async function freeTag(env, name, selfId = "") {
+  for (let i = 0; i < 20; i++) {
+    const tag = 1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000);
+    if (!(await env.DB.prepare("SELECT 1 FROM players WHERE name = ? COLLATE NOCASE AND tag = ? AND id != ?").bind(name, tag, selfId).first())) return tag;
+  }
+  return 1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000);
+}
+const friendRow = (r, meId) => ({ ...publicRow(r, meId), tag: r.tag, level: r.level, rating: r.rating, lang: r.lang });
+async function findPlayer(env, b) {
+  if (typeof b.target === "string" && b.target) return env.DB.prepare("SELECT * FROM players WHERE pub = ?").bind(b.target).first();
+  const m = /^(.{2,14})#(\d{4})$/u.exec(String(b.code || "").trim());
+  return m ? env.DB.prepare("SELECT * FROM players WHERE name = ? COLLATE NOCASE AND tag = ? AND hidden = 0").bind(m[1].trim(), Number(m[2])).first() : null;
+}
+async function friendList(env, p) {
+  const rows = (await env.DB.prepare(`SELECT p.*, f.w AS fw, f.l AS fl, f.t AS ft, f.created AS since FROM friends f JOIN players p ON p.id = f.friend
+      WHERE f.player = ? ORDER BY p.name COLLATE NOCASE LIMIT ${MAX_FRIENDS}`).bind(p.id).all()).results;
+  return rows.map((r) => ({ ...friendRow(r, p.id), w: r.fw, l: r.fl, t: r.ft, since: r.since }));
+}
+// Bilanz unter Freunden weiterzählen (beide Richtungen)
+const friendTally = (env, aId, bId, win) => [
+  env.DB.prepare("UPDATE friends SET w = w + ?, l = l + ?, t = t + ? WHERE player = ? AND friend = ?").bind(win === 1 ? 1 : 0, win === -1 ? 1 : 0, win === 0 ? 1 : 0, aId, bId),
+  env.DB.prepare("UPDATE friends SET w = w + ?, l = l + ?, t = t + ? WHERE player = ? AND friend = ?").bind(win === -1 ? 1 : 0, win === 1 ? 1 : 0, win === 0 ? 1 : 0, bId, aId),
+];
+
 // Ergebnis prüfen (verify.js); env.VERIFY = "off" schaltet die Prüfung ab (nur für Tests)
 async function check(env, p, kind, log, res, now) {
   if (env.VERIFY === "off") return 0;
@@ -251,6 +278,7 @@ async function matchSubmit(env, p, b, now) {
         .bind(points, secs, rounds, bflag, now, da, db, m.id),
     ];
     const res2 = win;
+    if (a && !bflag && !m.a_flag) stmts.push(...friendTally(env, p.id, a.id, win));
     if (rated) stmts.push(env.DB.prepare("UPDATE players SET rating = MAX(0, rating + ?), duels = duels + 1, duel_wins = duel_wins + ? WHERE id = ?").bind(db, res2 === 1 ? 1 : 0, p.id));
     if (rated) stmts.push(env.DB.prepare("UPDATE players SET rating = MAX(0, rating + ?), duels = duels + 1, duel_wins = duel_wins + ? WHERE id = ?").bind(da, res2 === -1 ? 1 : 0, a.id));
     await env.DB.batch(stmts);
@@ -276,7 +304,7 @@ async function matchList(env, p, now) {
 }
 
 // Datenbank auf den neuesten Stand bringen (neue Spalten), einmal je Version
-const SCHEMA = 5;
+const SCHEMA = 6;
 let migrated = false;
 async function migrate(env) {
   if (migrated) return;
@@ -291,7 +319,9 @@ async function migrate(env) {
       "CREATE INDEX IF NOT EXISTS match_open ON matches (status, lang, len, created)", "CREATE INDEX IF NOT EXISTS match_a ON matches (a, created)",
       "CREATE INDEX IF NOT EXISTS match_b ON matches (b, created)", "CREATE INDEX IF NOT EXISTS match_t ON matches (target, status)",
       "ALTER TABLE daily ADD COLUMN flag INTEGER NOT NULL DEFAULT 0", "ALTER TABLE matches ADD COLUMN a_flag INTEGER NOT NULL DEFAULT 0",
-      "ALTER TABLE matches ADD COLUMN b_flag INTEGER NOT NULL DEFAULT 0", "CREATE TABLE IF NOT EXISTS flags (player TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL)"]) {
+      "ALTER TABLE matches ADD COLUMN b_flag INTEGER NOT NULL DEFAULT 0", "CREATE TABLE IF NOT EXISTS flags (player TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL)",
+      "ALTER TABLE players ADD COLUMN tag INTEGER NOT NULL DEFAULT 0", "CREATE INDEX IF NOT EXISTS player_name ON players (lang, name COLLATE NOCASE)",
+      "CREATE TABLE IF NOT EXISTS friends (player TEXT NOT NULL, friend TEXT NOT NULL, created INTEGER NOT NULL, w INTEGER NOT NULL DEFAULT 0, l INTEGER NOT NULL DEFAULT 0, t INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (player, friend))"]) {
       try { await env.DB.prepare(sql).run(); } catch { /* Spalte gibt es schon */ }
     }
     await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', ?)").bind(String(SCHEMA)).run();
@@ -313,14 +343,15 @@ async function handle(req, env, now) {
   if (path === "/v1/register") {
     const name = cleanName(b.name); if (!name) return fail("name");
     const lang = LANGS.includes(b.lang) ? b.lang : null; if (!lang) return fail("lang");
-    const id = randHex(16), token = randHex(24), pub = randPub();
-    await env.DB.prepare("INSERT INTO players (id, pub, token_hash, name, lang, country, gold, look, tier, hidden, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)")
-      .bind(id, pub, await sha256(token), name, lang, cleanCountry(b.country), b.gold ? 1 : 0, cleanLook(b.look), now).run();
-    return json({ ok: true, id, token, pub, name });
+    const id = randHex(16), token = randHex(24), pub = randPub(), tag = await freeTag(env, name);
+    await env.DB.prepare("INSERT INTO players (id, pub, token_hash, name, lang, country, gold, look, tier, hidden, created, tag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)")
+      .bind(id, pub, await sha256(token), name, lang, cleanCountry(b.country), b.gold ? 1 : 0, cleanLook(b.look), now, tag).run();
+    return json({ ok: true, id, token, pub, name, tag });
   }
 
   const p = await auth(env, b);
   if (!p) return fail("auth", 401);
+  if (!p.tag) { p.tag = await freeTag(env, p.name, p.id); await env.DB.prepare("UPDATE players SET tag = ? WHERE id = ?").bind(p.tag, p.id).run(); }
 
   if (path === "/v1/profile") {
     const name = b.name == null ? p.name : cleanName(b.name); if (!name) return fail("name");
@@ -330,11 +361,14 @@ async function handle(req, env, now) {
     await env.DB.prepare("UPDATE players SET name = ?, lang = ?, country = ?, gold = ?, look = ?, hidden = CASE WHEN name = ? THEN hidden ELSE 0 END, level = ?, best_word = ?, best_score = ?, stats = ? WHERE id = ?")
       .bind(name, lang, b.country == null ? p.country : cleanCountry(b.country), b.gold == null ? p.gold : b.gold ? 1 : 0, b.look == null ? p.look : cleanLook(b.look), name, level, bw, bs,
         b.stats == null ? p.stats : cleanStats(b.stats), p.id).run();
+    if (name.toLowerCase() !== p.name.toLowerCase() && (await env.DB.prepare("SELECT 1 FROM players WHERE name = ? COLLATE NOCASE AND tag = ? AND id != ?").bind(name, p.tag, p.id).first())) {
+      p.tag = await freeTag(env, name, p.id); await env.DB.prepare("UPDATE players SET tag = ? WHERE id = ?").bind(p.tag, p.id).run();
+    }
     boardCache.clear();
-    return json({ ok: true, name });
+    return json({ ok: true, name, tag: p.tag });
   }
   if (path === "/v1/delete") { // alle Daten dieses Spielers löschen (Datenschutz)
-    await env.DB.batch(["players WHERE id", "daily WHERE player", "league_members WHERE player", "league_results WHERE player", "xp_days WHERE player", "reports WHERE reporter", "matches WHERE a", "matches WHERE b", "flags WHERE player"]
+    await env.DB.batch(["players WHERE id", "daily WHERE player", "league_members WHERE player", "league_results WHERE player", "xp_days WHERE player", "reports WHERE reporter", "matches WHERE a", "matches WHERE b", "flags WHERE player", "friends WHERE player", "friends WHERE friend"]
       .map((t) => env.DB.prepare(`DELETE FROM ${t} = ?`).bind(p.id)));
     boardCache.clear();
     return json({ ok: true });
@@ -367,14 +401,40 @@ async function handle(req, env, now) {
     const r = await env.DB.prepare("UPDATE league_results SET claimed = 1 WHERE player = ? AND week = ? AND claimed = 0").bind(p.id, String(b.week || "")).run();
     return json({ ok: true, claimed: (r.meta && r.meta.changes) > 0 });
   }
+  if (path === "/v1/friends") return json({ ok: true, tag: p.tag, friends: await friendList(env, p) });
+  if (path === "/v1/friends/add") {
+    const t = await findPlayer(env, b);
+    if (!t || t.id === p.id) return fail("target");
+    const n = (await env.DB.prepare("SELECT COUNT(*) AS n FROM friends WHERE player = ?").bind(p.id).first()).n;
+    if (n >= MAX_FRIENDS) return fail("full");
+    await env.DB.batch([
+      env.DB.prepare("INSERT OR IGNORE INTO friends (player, friend, created) VALUES (?, ?, ?)").bind(p.id, t.id, now),
+      env.DB.prepare("INSERT OR IGNORE INTO friends (player, friend, created) VALUES (?, ?, ?)").bind(t.id, p.id, now),
+    ]);
+    return json({ ok: true, friend: friendRow(t, p.id), tag: p.tag, friends: await friendList(env, p) });
+  }
+  if (path === "/v1/friends/remove") {
+    const t = await env.DB.prepare("SELECT id FROM players WHERE pub = ?").bind(String(b.target || "")).first();
+    if (t) await env.DB.batch([env.DB.prepare("DELETE FROM friends WHERE player = ? AND friend = ?").bind(p.id, t.id), env.DB.prepare("DELETE FROM friends WHERE player = ? AND friend = ?").bind(t.id, p.id)]);
+    return json({ ok: true, tag: p.tag, friends: await friendList(env, p) });
+  }
+  if (path === "/v1/friends/search") { // Namenssuche (gleiche Sprache, ausgeblendete Namen nicht)
+    const q = String(b.q || "").trim().replace(/#\d*$/, "");
+    if (q.length < 2 || q.length > 14) return json({ ok: true, players: [] });
+    const like = q.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
+    const rows = (await env.DB.prepare(`SELECT * FROM players WHERE lang = ? AND hidden = 0 AND id != ? AND name LIKE ? ESCAPE '\\'
+        ORDER BY (name = ? COLLATE NOCASE) DESC, level DESC LIMIT 20`).bind(p.lang, p.id, like, q).all()).results;
+    return json({ ok: true, players: rows.map((r) => friendRow(r, p.id)) });
+  }
   if (path === "/v1/match/start") {
     const len = b.len === 3 ? 3 : 5;
     const m = await matchStart(env, p, len, now);
     return json({ ok: true, match: m, rating: p.rating });
   }
   if (path === "/v1/match/challenge") { // Revanche: neues Duell nur für diesen Spieler – du spielst zuerst
-    const t = await env.DB.prepare("SELECT id FROM players WHERE pub = ?").bind(String(b.target || "")).first();
+    const t = await env.DB.prepare("SELECT id, lang FROM players WHERE pub = ?").bind(String(b.target || "")).first();
     if (!t || t.id === p.id) return fail("target");
+    if (t.lang !== p.lang) return fail("lang");   // gleiche Karten nur in derselben Sprache
     const id = randHex(10), seed = crypto.getRandomValues(new Uint32Array(1))[0], len = b.len === 3 ? 3 : 5;
     await env.DB.prepare("INSERT INTO matches (id, seed, len, lang, status, a, target, a_rating, created) VALUES (?, ?, ?, ?, 'playing_a', ?, ?, ?, ?)")
       .bind(id, seed, len, p.lang, p.id, t.id, p.rating, now).run();
@@ -383,6 +443,7 @@ async function handle(req, env, now) {
   if (path === "/v1/match/accept") { // Herausforderung annehmen
     const m = await env.DB.prepare("SELECT * FROM matches WHERE id = ? AND target = ? AND status = 'open'").bind(String(b.mid || ""), p.id).first();
     if (!m) return fail("match");
+    if (m.lang !== p.lang) return fail("lang");
     await env.DB.prepare("UPDATE matches SET status = 'claimed', b = ?, claimed = ? WHERE id = ? AND status = 'open'").bind(p.id, now, m.id).run();
     const opp = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(m.a).first();
     return json({ ok: true, match: matchView({ ...m, status: "claimed", b: p.id }, p.id, opp) });
