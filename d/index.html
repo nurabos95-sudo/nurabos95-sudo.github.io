@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wortpoker-Duell</title>
-<meta name="description" content="Du wurdest zu einem Wortpoker-Duell herausgefordert.">
-<meta property="og:title" content="⚔️ Wortpoker-Duell">
+<title>Wortpoker – Einladung</title>
+<meta name="description" content="Du wurdest zu Wortpoker-Duellen eingeladen.">
+<meta property="og:title" content="👥 Wortpoker – spiel mit mir!">
 <meta property="og:description" content="Gleiche Karten für beide – wer schafft mehr Punkte?">
 <meta property="og:image" content="https://nurabos95-sudo.github.io/icon.png">
 <link rel="icon" href="../icon.png">
@@ -19,10 +19,10 @@
   <p class="sub" id="sub">Duell</p>
   <div class="card">
     <div class="hero"><img src="../duel.webp" alt=""></div>
-    <p class="big" id="who">⚔️ Du wurdest herausgefordert!</p>
+    <p class="big" id="who">👥 Du wurdest eingeladen!</p>
     <p class="muted" id="what"></p>
-    <a class="btn green" id="open" href="#">▶ In Wortpoker annehmen</a>
-    <button class="btn light" id="copy" type="button">📋 Code kopieren</button>
+    <a class="btn green" id="open" href="#">▶ In Wortpoker als Freund hinzufügen</a>
+    <button class="btn light" id="copy" type="button">📋 Freundescode kopieren</button>
     <a class="btn red" id="store" href="https://play.google.com/store/apps/details?id=de.wortpoker.app">Wortpoker holen (kostenlos)</a>
     <div class="code" id="code"></div>
     <p class="muted" id="how" style="margin-top:12px"></p>
@@ -31,62 +31,46 @@
 </main>
 <script>
 const T = {
-  de: { sub: "Duell", ch: "⚔️ {0} fordert dich heraus!", anon: "⚔️ Du wurdest herausgefordert!", what: "{0} Punkte in {1} Runden – mit denselben Karten. Schaffst du mehr?",
-    reply: "⚔️ Antwort von {0}", replyw: "{0} hat {1} Punkte geholt. Öffne Wortpoker, um das Ergebnis zu sehen.",
-    open: "▶ In Wortpoker annehmen", copy: "📋 Code kopieren", copied: "✓ Kopiert", store: "Wortpoker holen (kostenlos)",
-    how: "Geht die App nicht auf? Code kopieren, Wortpoker öffnen → ⚔️ Duell → Einfügen.", bad: "Dieser Link enthält keinen gültigen Duell-Code.", priv: "Datenschutz" },
-  en: { sub: "Duel", ch: "⚔️ {0} challenges you!", anon: "⚔️ You've been challenged!", what: "{0} points in {1} rounds – with the same cards. Can you beat it?",
-    reply: "⚔️ Reply from {0}", replyw: "{0} scored {1} points. Open Wordpoker to see the result.",
-    open: "▶ Accept in Wordpoker", copy: "📋 Copy code", copied: "✓ Copied", store: "Get Wordpoker (free)",
-    how: "App doesn't open? Copy the code, open Wordpoker → ⚔️ Duel → Paste.", bad: "This link has no valid duel code.", priv: "Privacy" },
-  es: { sub: "Duelo", ch: "⚔️ ¡{0} te reta!", anon: "⚔️ ¡Te han retado!", what: "{0} puntos en {1} rondas – con las mismas cartas. ¿Puedes superarlo?",
-    reply: "⚔️ Respuesta de {0}", replyw: "{0} ha hecho {1} puntos. Abre Wordpoker para ver el resultado.",
-    open: "▶ Aceptar en Wordpoker", copy: "📋 Copiar código", copied: "✓ Copiado", store: "Descargar Wordpoker (gratis)",
-    how: "¿No se abre la app? Copia el código, abre Wordpoker → ⚔️ Duelo → Pegar.", bad: "Este enlace no tiene un código de duelo válido.", priv: "Privacidad" },
-  fr: { sub: "Duel", ch: "⚔️ {0} te défie !", anon: "⚔️ Tu as été défié !", what: "{0} points en {1} manches – avec les mêmes cartes. Feras-tu mieux ?",
-    reply: "⚔️ Réponse de {0}", replyw: "{0} a marqué {1} points. Ouvre Wordpoker pour voir le résultat.",
-    open: "▶ Accepter dans Wordpoker", copy: "📋 Copier le code", copied: "✓ Copié", store: "Télécharger Wordpoker (gratuit)",
-    how: "L'appli ne s'ouvre pas ? Copie le code, ouvre Wordpoker → ⚔️ Duel → Coller.", bad: "Ce lien ne contient pas de code de duel valide.", priv: "Confidentialité" },
-  pt: { sub: "Duelo", ch: "⚔️ {0} te desafiou!", anon: "⚔️ Você foi desafiado!", what: "{0} pontos em {1} rodadas – com as mesmas cartas. Consegue fazer mais?",
-    reply: "⚔️ Resposta de {0}", replyw: "{0} fez {1} pontos. Abra o Wordpoker para ver o resultado.",
-    open: "▶ Aceitar no Wordpoker", copy: "📋 Copiar código", copied: "✓ Copiado", store: "Baixar Wordpoker (grátis)",
-    how: "O app não abre? Copie o código, abra o Wordpoker → ⚔️ Duelo → Colar.", bad: "Este link não tem um código de duelo válido.", priv: "Privacidade" },
+  de: { sub: "Freunde", inv: "👥 {0} lädt dich ein!", anon: "👥 Du wurdest eingeladen!", what: "Spielt Wortpoker-Duelle gegeneinander: gleiche Karten für beide – wer schafft mehr Punkte?",
+    open: "▶ In Wortpoker als Freund hinzufügen", copy: "📋 Freundescode kopieren", copied: "✓ Kopiert", store: "Wortpoker holen (kostenlos)",
+    how: "Geht die App nicht auf? Wortpoker öffnen → ⚔️ Duell → ➕ Freund hinzufügen → Code einfügen.", old: "Duell-Codes gibt es nicht mehr. Öffne Wortpoker und füge deine Freunde unter ⚔️ Duell hinzu.", bad: "Dieser Link ist ungültig.", priv: "Datenschutz" },
+  en: { sub: "Friends", inv: "👥 {0} invites you!", anon: "👥 You've been invited!", what: "Play Wordpoker duels against each other: same cards for both – who scores more?",
+    open: "▶ Add as friend in Wordpoker", copy: "📋 Copy friend code", copied: "✓ Copied", store: "Get Wordpoker (free)",
+    how: "App doesn't open? Open Wordpoker → ⚔️ Duel → ➕ Add friend → paste the code.", old: "Duel codes no longer exist. Open Wordpoker and add your friends under ⚔️ Duel.", bad: "This link is not valid.", priv: "Privacy" },
+  es: { sub: "Amigos", inv: "👥 ¡{0} te invita!", anon: "👥 ¡Te han invitado!", what: "Jugad duelos de Wordpoker: las mismas cartas para los dos – ¿quién hace más puntos?",
+    open: "▶ Añadir como amigo en Wordpoker", copy: "📋 Copiar código de amigo", copied: "✓ Copiado", store: "Descargar Wordpoker (gratis)",
+    how: "¿No se abre la app? Abre Wordpoker → ⚔️ Duelo → ➕ Añadir amigo → pega el código.", old: "Los códigos de duelo ya no existen. Abre Wordpoker y añade a tus amigos en ⚔️ Duelo.", bad: "Este enlace no es válido.", priv: "Privacidad" },
+  fr: { sub: "Amis", inv: "👥 {0} t'invite !", anon: "👥 Tu as été invité !", what: "Jouez des duels Wordpoker : les mêmes cartes pour les deux – qui marquera le plus ?",
+    open: "▶ Ajouter en ami dans Wordpoker", copy: "📋 Copier le code ami", copied: "✓ Copié", store: "Télécharger Wordpoker (gratuit)",
+    how: "L'appli ne s'ouvre pas ? Ouvre Wordpoker → ⚔️ Duel → ➕ Ajouter un ami → colle le code.", old: "Les codes de duel n'existent plus. Ouvre Wordpoker et ajoute tes amis dans ⚔️ Duel.", bad: "Ce lien n'est pas valide.", priv: "Confidentialité" },
+  pt: { sub: "Amigos", inv: "👥 {0} te convidou!", anon: "👥 Você foi convidado!", what: "Joguem duelos de Wordpoker: as mesmas cartas para os dois – quem faz mais pontos?",
+    open: "▶ Adicionar como amigo no Wordpoker", copy: "📋 Copiar código de amigo", copied: "✓ Copiado", store: "Baixar Wordpoker (grátis)",
+    how: "O app não abre? Abra o Wordpoker → ⚔️ Duelo → ➕ Adicionar amigo → cole o código.", old: "Os códigos de duelo não existem mais. Abra o Wordpoker e adicione seus amigos em ⚔️ Duelo.", bad: "Este link não é válido.", priv: "Privacidade" },
 };
 const L = T[(navigator.language || "de").slice(0, 2)] || T.en;
 const f = (s, a) => s.replace(/\{(\d)\}/g, (_, i) => a[i]);
 const $ = (id) => document.getElementById(id);
-// Duell-Code lesen (gleiches Format wie in der App: Basis-32, Prüfsumme am Ende)
-const B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-function decode(text) {
-  const m = /WP-([0-9A-Z]{20,})/i.exec(text || ""); if (!m) return null;
-  const b = []; let val = 0, bits = 0;
-  for (const ch of m[1].toUpperCase()) { const v = B32.indexOf(ch); if (v < 0) return null; val = (val << 5) | v; bits += 5; if (bits >= 8) { b.push((val >> (bits - 8)) & 255); bits -= 8; val &= (1 << bits) - 1; } }
-  const v = b[0]; if (v < 1 || v > 5) return null;
-  const off = v === 5 ? 22 : v === 4 ? 21 : v === 3 ? 20 : v === 2 ? 14 : 12; if (b.length < off + 2) return null;
-  const n = b[off]; if (b.length < off + 2 + n) return null;
-  let sum = 0; for (const x of b.slice(0, off + 1 + n)) sum = (sum * 31 + x) & 255; if (sum !== b[off + 1 + n]) return null;
-  const rd = (i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
-  return { code: "WP-" + m[1].toUpperCase(), points: rd(5), rounds: b[11], len: v >= 4 && (b[12] === 3 || b[12] === 5) ? b[12] : 5, gold: v === 5 && (b[21] & 1) === 1,
-    name: new TextDecoder().decode(new Uint8Array(b.slice(off + 1, off + 1 + n))) };
-}
-const d = decode(decodeURIComponent(location.hash || location.search));
+// Einladung eines Freundes: #F-<öffentliche ID>~<Name>~<4 Ziffern>
+const h = decodeURIComponent(location.hash || location.search || "");
+const m = /F-([0-9a-z]{4,16})(?:~([^~]*)~(\d{4})?)?/i.exec(h);
 $("sub").textContent = L.sub; $("copy").textContent = L.copy; $("store").textContent = L.store; $("how").textContent = L.how; $("priv").textContent = L.priv;
 document.documentElement.lang = (navigator.language || "de").slice(0, 2);
-if (!d) {
-  $("who").textContent = L.bad; $("open").style.display = "none"; $("copy").style.display = "none";
+if (!m) {
+  $("who").textContent = /WP-/i.test(h) ? L.old : L.bad; $("open").style.display = "none"; $("copy").style.display = "none"; $("how").style.display = "none";
 } else {
-  const pts = d.points.toLocaleString(navigator.language || "de");
-  $("who").textContent = d.name ? f(L.ch, [(d.gold ? "🌟 " : "") + d.name]) : L.anon;
-  $("what").textContent = f(L.what, [pts, d.len]);
-  $("code").textContent = d.code;
+  const pub = m[1], name = (m[2] || "").slice(0, 14), code = name && m[3] ? name + "#" + m[3] : "";
+  $("who").textContent = name ? f(L.inv, [name]) : L.anon;
+  $("what").textContent = L.what;
+  $("code").textContent = code;
   $("open").textContent = L.open;
   const isAndroid = /Android/i.test(navigator.userAgent);
   const store = "https://play.google.com/store/apps/details?id=de.wortpoker.app";
   $("open").href = isAndroid
-    ? `intent://duel?c=${d.code}#Intent;scheme=wortpoker;package=de.wortpoker.app;S.browser_fallback_url=${encodeURIComponent(store)};end`
-    : `wortpoker://duel?c=${d.code}`;
+    ? `intent://duel?f=${pub}#Intent;scheme=wortpoker;package=de.wortpoker.app;S.browser_fallback_url=${encodeURIComponent(store)};end`
+    : `wortpoker://duel?f=${pub}`;
+  if (!code) $("copy").style.display = "none";
   $("copy").onclick = async () => {
-    try { await navigator.clipboard.writeText(d.code); } catch (e) {
+    try { await navigator.clipboard.writeText(code); } catch (e) {
       const r = document.createRange(); r.selectNodeContents($("code")); getSelection().removeAllRanges(); getSelection().addRange(r); document.execCommand("copy"); }
     $("copy").textContent = L.copied; setTimeout(() => ($("copy").textContent = L.copy), 1800);
   };

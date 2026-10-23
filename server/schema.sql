@@ -21,8 +21,10 @@ CREATE TABLE IF NOT EXISTS players (
   best_score INTEGER NOT NULL DEFAULT 0,
   stats TEXT NOT NULL DEFAULT '{}',     -- Profil: Erfolge, Duelle, Rekorde, Vitrine (3 Lieblings-Erfolge)
   rating INTEGER NOT NULL DEFAULT 1000, -- Duell-Wertung (Elo)
-  duels INTEGER NOT NULL DEFAULT 0, duel_wins INTEGER NOT NULL DEFAULT 0
+  duels INTEGER NOT NULL DEFAULT 0, duel_wins INTEGER NOT NULL DEFAULT 0,
+  tag INTEGER NOT NULL DEFAULT 0        -- Freundescode: Name#tag (4 Ziffern)
 );
+CREATE INDEX IF NOT EXISTS player_name ON players (lang, name COLLATE NOCASE);
 
 -- Tages-Challenge: nur der erste Versuch des Tages zählt
 CREATE TABLE IF NOT EXISTS daily (
@@ -68,6 +70,10 @@ CREATE INDEX IF NOT EXISTS match_open ON matches (status, lang, len, created);
 CREATE INDEX IF NOT EXISTS match_a ON matches (a, created);
 CREATE INDEX IF NOT EXISTS match_b ON matches (b, created);
 CREATE INDEX IF NOT EXISTS match_t ON matches (target, status);
+
+-- Freunde (immer in beide Richtungen gespeichert), mit Bilanz der Duelle seit der Freundschaft
+CREATE TABLE IF NOT EXISTS friends (player TEXT NOT NULL, friend TEXT NOT NULL, created INTEGER NOT NULL,
+  w INTEGER NOT NULL DEFAULT 0, l INTEGER NOT NULL DEFAULT 0, t INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (player, friend));
 
 -- Auffällige Ergebnisse (zum Nachsehen, ob die Prüfung zu streng ist)
 CREATE TABLE IF NOT EXISTS flags (player TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL);
