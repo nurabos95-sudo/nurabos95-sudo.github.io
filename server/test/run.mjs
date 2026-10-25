@@ -221,6 +221,21 @@ console.log("Freunde");
   ok(fr.friends.length === 1 && (await call("/v1/friends", { id: f2.id, token: f2.token })).friends.length === 0, "Entfernen: auf beiden Seiten weg");
 }
 
+console.log("Wort-Arena");
+{
+  const [a1, a2] = [await reg("Arena1"), await reg("Arena2")];
+  let o = await call("/v1/arena/opponent", { id: a1.id, token: a1.token, wins: 0 });
+  ok(o.ok && o.opp === null, "Leerer Pool: kein Gegner (App nimmt dann einen Computer-Gegner)");
+  for (const [w, pts] of [[0, 300], [1, 500], [5, 1500]]) await call("/v1/arena/submit", { id: a2.id, token: a2.token, wins: w, seed: 1000 + w, points: pts, secs: 60, rounds: 3 });
+  o = await call("/v1/arena/opponent", { id: a1.id, token: a1.token, wins: 5 });
+  ok(o.opp && o.opp.wins === 5 && o.opp.seed === 1005 && o.opp.name === "Arena2" && o.opp.points === 1500, `Gegner mit ähnlich vielen Siegen (${JSON.stringify(o.opp && [o.opp.wins, o.opp.name])})`);
+  o = await call("/v1/arena/opponent", { id: a1.id, token: a1.token, wins: 0, skip: [] });
+  ok(o.opp && o.opp.wins <= 1, "Bei 0 Siegen: Gegner mit 0–1 Siegen");
+  ok((await call("/v1/arena/opponent", { id: a2.id, token: a2.token, wins: 0 })).opp === null, "Nie gegen sich selbst");
+  const sk = await call("/v1/arena/opponent", { id: a1.id, token: a1.token, wins: 5, skip: [o.opp.rid, (await call("/v1/arena/opponent", { id: a1.id, token: a1.token, wins: 5 })).opp.rid] });
+  ok(!sk.opp || sk.opp.wins !== 5, "Schon gespielte Gegner werden übersprungen");
+}
+
 console.log("Melden und Löschen");
 for (const x of [b, c, ps[5]]) await call("/v1/report", { id: x.id, token: x.token, target: a.pub });
 r = await call("/v1/league", { id: ps[6].id, token: ps[6].token });

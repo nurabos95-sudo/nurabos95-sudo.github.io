@@ -108,6 +108,7 @@ export async function cleanup(env, now) {
     env.DB.prepare("DELETE FROM reports WHERE at < ?").bind(cut),
     env.DB.prepare("DELETE FROM matches WHERE created < ?").bind(now - 60 * 86400000),
     env.DB.prepare("DELETE FROM flags WHERE at < ?").bind(now - 90 * 86400000),
+    env.DB.prepare("DELETE FROM arena_results WHERE at < ?").bind(now - 60 * 86400000),
   ]);
 }
 
@@ -305,7 +306,7 @@ async function matchList(env, p, now) {
 }
 
 // Datenbank auf den neuesten Stand bringen (neue Spalten), einmal je Version
-const SCHEMA = 6;
+const SCHEMA = 7;
 let migrated = false;
 async function migrate(env) {
   if (migrated) return;
@@ -322,7 +323,9 @@ async function migrate(env) {
       "ALTER TABLE daily ADD COLUMN flag INTEGER NOT NULL DEFAULT 0", "ALTER TABLE matches ADD COLUMN a_flag INTEGER NOT NULL DEFAULT 0",
       "ALTER TABLE matches ADD COLUMN b_flag INTEGER NOT NULL DEFAULT 0", "CREATE TABLE IF NOT EXISTS flags (player TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL)",
       "ALTER TABLE players ADD COLUMN tag INTEGER NOT NULL DEFAULT 0", "CREATE INDEX IF NOT EXISTS player_name ON players (lang, name COLLATE NOCASE)",
-      "CREATE TABLE IF NOT EXISTS friends (player TEXT NOT NULL, friend TEXT NOT NULL, created INTEGER NOT NULL, w INTEGER NOT NULL DEFAULT 0, l INTEGER NOT NULL DEFAULT 0, t INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (player, friend))"]) {
+      "CREATE TABLE IF NOT EXISTS friends (player TEXT NOT NULL, friend TEXT NOT NULL, created INTEGER NOT NULL, w INTEGER NOT NULL DEFAULT 0, l INTEGER NOT NULL DEFAULT 0, t INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (player, friend))",
+      "CREATE TABLE IF NOT EXISTS arena_results (id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, lang TEXT NOT NULL, wins INTEGER NOT NULL, seed INTEGER NOT NULL, points INTEGER NOT NULL, secs INTEGER NOT NULL, rounds INTEGER NOT NULL, flag INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL)",
+      "CREATE INDEX IF NOT EXISTS arena_pick ON arena_results (lang, wins, at)"]) {
       try { await env.DB.prepare(sql).run(); } catch { /* Spalte gibt es schon */ }
     }
     await env.DB.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('schema', ?)").bind(String(SCHEMA)).run();
@@ -369,7 +372,7 @@ async function handle(req, env, now) {
     return json({ ok: true, name, tag: p.tag });
   }
   if (path === "/v1/delete") { // alle Daten dieses Spielers löschen (Datenschutz)
-    await env.DB.batch(["players WHERE id", "daily WHERE player", "league_members WHERE player", "league_results WHERE player", "xp_days WHERE player", "reports WHERE reporter", "matches WHERE a", "matches WHERE b", "flags WHERE player", "friends WHERE player", "friends WHERE friend"]
+    await env.DB.batch(["players WHERE id", "daily WHERE player", "league_members WHERE player", "league_results WHERE player", "xp_days WHERE player", "reports WHERE reporter", "matches WHERE a", "matches WHERE b", "flags WHERE player", "friends WHERE player", "friends WHERE friend", "arena_results WHERE player"]
       .map((t) => env.DB.prepare(`DELETE FROM ${t} = ?`).bind(p.id)));
     boardCache.clear();
     return json({ ok: true });
@@ -426,6 +429,25 @@ async function handle(req, env, now) {
     const rows = (await env.DB.prepare(`SELECT * FROM players WHERE lang = ? AND hidden = 0 AND id != ? AND name LIKE ? ESCAPE '\\'
         ORDER BY (name = ? COLLATE NOCASE) DESC, level DESC LIMIT 20`).bind(p.lang, p.id, like, q).all()).results;
     return json({ ok: true, players: rows.map((r) => friendRow(r, p.id)) });
+  }
+  // ── Wort-Arena: Gegner = gespeichertes Arena-Duell eines anderen Spielers mit ähnlich vielen Siegen ──
+  if (path === "/v1/arena/opponent") {
+    const w = int(b.wins, 0, 12) ?? 0, skip = Array.isArray(b.skip) ? b.skip.filter(Number.isInteger).slice(0, 20) : [];
+    const q = `SELECT r.*, p.pub, p.name, p.country, p.gold, p.look, p.hidden, p.trophies, p.level, p.rating FROM arena_results r JOIN players p ON p.id = r.player
+      WHERE r.lang = ? AND r.player != ? AND r.flag = 0 AND r.at > ? AND r.wins BETWEEN ? AND ?${skip.length ? ` AND r.id NOT IN (${skip.map(() => "?").join(",")})` : ""} ORDER BY RANDOM() LIMIT 1`;
+    let r = await env.DB.prepare(q).bind(p.lang, p.id, now - 21 * 86400000, Math.max(0, w - 1), w + 1, ...skip).first();
+    if (!r) r = await env.DB.prepare(q).bind(p.lang, p.id, now - 60 * 86400000, 0, 12, ...skip).first();   // zur Not irgendein Gegner
+    return json({ ok: true, opp: r ? { rid: r.id, seed: r.seed, points: r.points, secs: r.secs, rounds: r.rounds, wins: r.wins, ...publicRow(r, p.id), level: r.level, rating: r.rating } : null });
+  }
+  if (path === "/v1/arena/submit") {
+    const w = int(b.wins, 0, 12), seed = int(b.seed, 0, 4294967295), points = int(b.points, 0, 50000000), secs = int(b.secs, 1, 86400), rounds = int(b.rounds, 0, 3);
+    if (w == null || seed == null || points == null || secs == null || rounds == null) return fail("score");
+    const n = (await env.DB.prepare("SELECT COUNT(*) AS n FROM arena_results WHERE player = ? AND at > ?").bind(p.id, now - 86400000).first()).n;
+    if (n >= 60) return json({ ok: true, stored: false });
+    const flag = await check(env, p, "arena", b.log, { lang: p.lang, rounds, points, secs, len: 3 }, now);
+    await env.DB.prepare("INSERT INTO arena_results (player, lang, wins, seed, points, secs, rounds, flag, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(p.id, p.lang, w, seed, points, secs, rounds, flag, now).run();
+    return json({ ok: true, stored: true });
   }
   if (path === "/v1/match/start") {
     const len = b.len === 3 ? 3 : 5;
