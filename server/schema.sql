@@ -75,6 +75,11 @@ CREATE INDEX IF NOT EXISTS match_t ON matches (target, status);
 CREATE TABLE IF NOT EXISTS friends (player TEXT NOT NULL, friend TEXT NOT NULL, created INTEGER NOT NULL,
   w INTEGER NOT NULL DEFAULT 0, l INTEGER NOT NULL DEFAULT 0, t INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (player, friend));
 
+-- Wort-Arena: gespielte Arena-Duelle (3 Runden) werden zu Gegnern für andere Spieler mit ähnlich vielen Siegen
+CREATE TABLE IF NOT EXISTS arena_results (id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, lang TEXT NOT NULL, wins INTEGER NOT NULL,
+  seed INTEGER NOT NULL, points INTEGER NOT NULL, secs INTEGER NOT NULL, rounds INTEGER NOT NULL, flag INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS arena_pick ON arena_results (lang, wins, at);
+
 -- Auffällige Ergebnisse (zum Nachsehen, ob die Prüfung zu streng ist)
 CREATE TABLE IF NOT EXISTS flags (player TEXT NOT NULL, kind TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL);
 
