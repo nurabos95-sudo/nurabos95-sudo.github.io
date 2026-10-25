@@ -129,3 +129,5 @@ Schwerter, Pokal, Lupe, Buch, Radierer, Würfel, Schatztruhe, Glühbirne), die 4
 (Tiere mit normalem und jubelndem Gesicht) und ihr Zubehör (Hüte, Brillen, Halsschmuck, zwölf Monats-Anstecker) wurden eigens
 für Wortpoker mit einem Bildgenerator (ChatGPT) erstellt. Knöpfe, Paneele, Spielsteine, Hintergründe und die kleinen Strich-Symbole sind
 im Code gezeichnet (CSS/SVG in src/Wortpoker.jsx).
+
+Landkarten der Wortreise: Länderumrisse aus Natural Earth (1:50m, naturalearthdata.com), gemeinfrei (Public Domain).
