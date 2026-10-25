@@ -19,7 +19,7 @@ export const inDict = (lang, w) => {
 };
 
 // ── Rundenziele (wie targetFor in der App, Stufe 1) ──
-const TARGETS = [50, 110, 190, 330, 560, 850, 1200, 1600, 2000, 2600, 3400, 4100];
+const TARGETS = [50, 100, 170, 270, 420, 640, 950, 1350, 1800, 2400, 3200, 4100]; // wie im Spiel (Okt. 2026, flacher bis Runde 8)
 const LANG_TARGET = { es: 1.08, fr: 1.02, pt: 1.04 };
 const WIN_ROUND = 12;
 export const targetOf = (r, rules, lang) => {
