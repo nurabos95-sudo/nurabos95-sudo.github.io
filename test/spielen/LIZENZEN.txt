@@ -1,0 +1,131 @@
+Wortpoker – Quellen und Lizenzen
+================================
+
+1) Wörterbuch (words.txt)
+-------------------------
+Die Datei words.txt ist eine Bearbeitung der unten genannten Wortlisten: Wortformen mit 3 bis 9 Buchstaben,
+ohne Eigennamen, Abkürzungen und Beleidigungen, in Großbuchstaben (ß als SS), zusammengeführt und sortiert.
+Sie steht unter der Lizenz Creative Commons Namensnennung – Weitergabe unter gleichen Bedingungen 4.0 International
+(CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/deed.de
+
+Quellen:
+  • german-pos-dict – Daniel Naber / LanguageTool (https://github.com/languagetool-org/german-pos-dict).
+    Original source: export from Morphy (http://morphy.wolfganglezius.de/) by Wolfgang Lezius,
+    extended by http://korrekturen.de/flexion. Lizenz: CC BY-SA 4.0.
+  • german-nouns – Gregor Weichbrodt (https://github.com/gambolputty/german-nouns),
+    erstellt aus dem deutschen Wiktionary (https://de.wiktionary.org). Lizenz: CC BY-SA 4.0.
+  • wortliste – Deutschsprachige Trennmustermannschaft (https://repo.or.cz/wortliste.git). Lizenz: MIT (siehe unten).
+
+1b) Wörterbücher der anderen Sprachen
+------------------------------------
+Alle Listen: Wörter mit 3 bis 9 Buchstaben, Großbuchstaben, ohne Akzente (Spanisch mit Ñ, Portugiesisch mit Ç),
+ohne Eigennamen und Beleidigungen (Filter: LDNOOBW, https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words, CC BY 4.0).
+  • words-en.txt (Englisch) – ENABLE word list (gemeinfrei / public domain).
+  • words-es.txt (Spanisch), words-fr.txt (Französisch) – Letterpress-Wortlisten von Loren Brichter,
+    https://github.com/lorenbrichter/Words, Lizenz: CC0 1.0 Universal (gemeinfrei).
+  • words-pt.txt (Portugiesisch, Brasilien) – pt-br-Lexikon von Fernando Serboncini, https://github.com/fserb/pt-br,
+    Lizenz: MIT (Copyright 2021 Fernando Serboncini). Ergänzt um regelmäßige Mehrzahlformen.
+
+2) Software
+-----------
+  • React, React DOM, Scheduler – Copyright (c) Facebook, Inc. and its affiliates. Lizenz: MIT.
+  • Capacitor (@capacitor/core, @capacitor/android) – Copyright (c) 2017-present Drifty Co. Lizenz: MIT.
+  • @capacitor/app, @capacitor/preferences, @capacitor/share – Copyright 2020-present Ionic. Lizenz: MIT.
+
+3) MIT-Lizenz
+-------------
+wortliste: Copyright (c) 2013-2014 Stephan Hennig, Werner Lemberg, Guenter Milde,
+Sander van Geloven, Georg Pfeiffer, Gisbert W. Selke, Tobias Wendorf
+(die übrigen Copyright-Zeilen siehe Abschnitt 2)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+4) Schriften (public/fonts)
+---------------------------
+  • Lilita One – Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz), with Reserved Font Name Lilita.
+    Die Datei fonts/LilitaOne-Regular.ttf ist die unveränderte Originaldatei.
+  • Nunito – Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito).
+    Für Wortpoker auf die benötigten Zeichen und Strichstärken (600–1000) verkleinert (Subset) und als WOFF gespeichert.
+Beide Schriften stehen unter der SIL Open Font License, Version 1.1 (Text unten).
+
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide development of collaborative font projects, to
+support the font creation efforts of academic and linguistic communities, and to provide a free and open framework in
+which fonts may be shared and improved in partnership with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and redistributed freely as long as they are not sold
+by themselves. The fonts, including any derivative works, can be bundled, embedded, redistributed and/or sold with any
+software provided that any reserved names are not used by derivative works. The fonts and derivatives, however, cannot
+be released under any other type of license. The requirement for fonts to remain under this license does not apply to
+any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright Holder(s) under this license and clearly marked
+as such. This may include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting, or substituting -- in part or in whole -- any
+of the components of the Original Version, by changing formats or by porting the Font Software to a new environment.
+
+"Author" refers to any designer, engineer, programmer, technical writer or other person who contributed to the Font
+Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining a copy of the Font Software, to use, study, copy,
+merge, embed, modify, redistribute, and sell modified and unmodified copies of the Font Software, subject to the
+following conditions:
+
+1) Neither the Font Software nor any of its individual components, in Original or Modified Versions, may be sold by
+itself.
+
+2) Original or Modified Versions of the Font Software may be bundled, redistributed and/or sold with any software,
+provided that each copy contains the above copyright notice and this license. These can be included either as
+stand-alone text files, human-readable headers or in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font Name(s) unless explicit written permission is
+granted by the corresponding Copyright Holder. This restriction only applies to the primary font name as presented to
+the users.
+
+4) The name(s) of the Copyright Holder(s) and the Author(s) of the Font Software shall not be used to promote, endorse
+or advertise any Modified Version, except to acknowledge the contribution(s) of the Copyright Holder(s) and the
+Author(s) or with their explicit written permission.
+
+5) The Font Software, modified or unmodified, in part or in whole, must be distributed entirely under this license,
+and must not be distributed under any other license. The requirement for fonts to remain under this license does not
+apply to any document created using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT, TRADEMARK,
+OR OTHER RIGHT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING
+ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE FONT
+SOFTWARE.
+
+5) Grafiken (public/art)
+------------------------
+Die Bilder der Joker, der 24 Bosse und 4 Endbosse, des Händlers Wenzel, die Ladenwand, Münze und Chips, die Symbole (Kalender,
+Schwerter, Pokal, Lupe, Buch, Radierer, Würfel, Schatztruhe, Glühbirne), die 45 Erfolgs-Medaillen, die zwölf Spielfiguren
+(Tiere mit normalem und jubelndem Gesicht) und ihr Zubehör (Hüte, Brillen, Halsschmuck, zwölf Monats-Anstecker) wurden eigens
+für Wortpoker mit einem Bildgenerator (ChatGPT) erstellt. Knöpfe, Paneele, Spielsteine, Hintergründe und die kleinen Strich-Symbole sind
+im Code gezeichnet (CSS/SVG in src/Wortpoker.jsx).
