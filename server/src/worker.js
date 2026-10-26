@@ -42,7 +42,7 @@ const cleanLook = (l) => {
   return JSON.stringify(o);
 };
 // Profil-Statistik: nur bekannte Zahlen, bis zu 5 Vitrinen-Stücke (Erfolge, „b-…“ = Abzeichen) und die Abzeichen
-const STAT_KEYS = ["ach", "achTotal", "duels", "duelWins", "ghosts", "record", "stars", "bosses", "games", "words", "wins", "cards", "cardsTotal", "keys"];
+const STAT_KEYS = ["ach", "achTotal", "duels", "duelWins", "ghosts", "record", "stars", "bosses", "games", "words", "wins", "cards", "cardsTotal", "keys", "magnets"];
 const cleanStats = (st) => {
   if (!st || typeof st !== "object") return "{}";
   const o = {};
@@ -53,6 +53,7 @@ const cleanStats = (st) => {
   const ids = (a, re, n) => (Array.isArray(a) ? [...new Set(a.filter((x) => typeof x === "string" && re.test(x)))].slice(0, n) : undefined);
   const cl = ids(st.cardList, /^[a-z0-9_-]{1,40}(~[23])?$/, 30), kl = ids(st.keyList, /^[a-z0-9_-]{1,40}$/, 30), bl = ids(st.bossList, /^[a-z0-9-]{1,24}$/, 60);
   if (cl) o.cardList = cl; if (kl) o.keyList = kl; if (bl) o.bossList = bl;
+  const mw = ids(st.magnetWall, /^[a-z]{2}(~[23])?$/, 12); if (mw) o.magnetWall = mw;
   return JSON.stringify(o);
 };
 const cleanCountry = (c) => (typeof c === "string" && /^[A-Z]{2}$/.test(c) ? c : "");
