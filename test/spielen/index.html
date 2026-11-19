@@ -8,8 +8,19 @@
     <title>Wortheim</title>
     <link rel="preload" href="fonts/LilitaOne-Regular.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="fonts/Nunito-Variable.woff" as="font" type="font/woff" crossorigin />
+    <script>
+      // A011: Wörterbuch der Spielsprache sofort mitladen (parallel zur Spieldatei) – das Spiel wartet beim Start darauf.
+      // Gleiche Sprachwahl wie src/i18n.js (gespeicherte Wahl, sonst Gerätesprache, sonst Englisch).
+      (function () { try {
+        var C = ["de", "en", "es", "fr", "pt"], l = null;
+        try { l = localStorage.getItem("wortpoker-lang"); } catch (e) {}
+        if (C.indexOf(l) < 0) { l = String(navigator.language || "de").toLowerCase().slice(0, 2); if (C.indexOf(l) < 0) l = "en"; }
+        var k = document.createElement("link"); k.rel = "preload"; k.as = "fetch"; k.crossOrigin = "anonymous";
+        k.href = l === "de" ? "words.txt" : "words-" + l + ".txt"; document.head.appendChild(k);
+      } catch (e) {} })();
+    </script>
     <style>*,:before,:after{box-sizing:border-box}html,body{color:#fff;overscroll-behavior:none;background:#4b36d0;margin:0;padding:0}body{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%;-moz-text-size-adjust:100%;text-size-adjust:100%}button{touch-action:manipulation;font-family:inherit}#root{min-height:100dvh}</style>
-    <script type="module" crossorigin src="./assets/index-hPcd1pOG.js"></script>
+    <script type="module" crossorigin src="./assets/index-CMzJm7aQ.js"></script>
   </head>
   <body>
     <div id="root"></div>
