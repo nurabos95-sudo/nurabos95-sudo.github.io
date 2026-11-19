@@ -30,7 +30,12 @@ ohne Eigennamen und Beleidigungen (Filter: LDNOOBW, https://github.com/LDNOOBW/L
 -----------
   • React, React DOM, Scheduler – Copyright (c) Facebook, Inc. and its affiliates. Lizenz: MIT.
   • Capacitor (@capacitor/core, @capacitor/android) – Copyright (c) 2017-present Drifty Co. Lizenz: MIT.
-  • @capacitor/app, @capacitor/preferences, @capacitor/share – Copyright 2020-present Ionic. Lizenz: MIT.
+  • @capacitor/app, @capacitor/preferences, @capacitor/share, @capacitor/local-notifications – Copyright 2020-present Ionic. Lizenz: MIT.
+  • @capacitor-community/admob – Copyright (c) 2021 Capacitor Community. Lizenz: MIT.
+  • cordova-plugin-purchase (Käufe über Google Play) – Copyright (c) Jean-Christophe Hoelt / Fovea. Lizenz: MIT.
+  • Apache Cordova (Teile der Cordova-Brücke in Capacitor) – Copyright The Apache Software Foundation. Lizenz: Apache License 2.0.
+  • Google Play Billing Library, Google Mobile Ads SDK und User Messaging Platform (nur in der Android-App) – Google LLC,
+    Nutzung gemäß den Android Software Development Kit License Agreement / Google-Nutzungsbedingungen.
 
 3) MIT-Lizenz
 -------------
