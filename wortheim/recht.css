@@ -1,0 +1,12 @@
+:root { --ink: #222; --soft: #5b5b5b; --bg: #fffdf8; --line: #e6dfd0; --link: #1d5fb8; --note: #fff3c4; }
+@media (prefers-color-scheme: dark) { :root { --ink: #eee; --soft: #b8b8b8; --bg: #1b1a17; --line: #3a372f; --link: #8cb8ff; --note: #4a4020; } }
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; line-height: 1.6; }
+h1 { font-size: 1.55em; line-height: 1.25; margin: .4em 0 .3em; } h2 { font-size: 1.12em; margin-top: 1.7em; }
+a { color: var(--link); } .meta { color: var(--soft); font-size: .92em; }
+nav.sprachen { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: .9em; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+nav.sprachen b { font-weight: 800; }
+.hinweis { background: var(--note); border-radius: 8px; padding: 8px 12px; font-size: .92em; }
+.kontakt { border-left: 3px solid var(--line); padding-left: 12px; }
+ul.wahl { list-style: none; padding: 0; } ul.wahl li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 10px 0; }
+ul.wahl .sprache { font-weight: 800; font-size: 1.05em; } ul.wahl a { margin-right: 14px; display: inline-block; }
